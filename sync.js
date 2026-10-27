@@ -26,12 +26,12 @@ const brand=T(raw.brand,100)||"إضافات يدوية",k=compKey(brand,rec.mode
 return{acc,dup,err,next:custom.concat(acc)}}
 const parseComps=j=>Array.isArray(j)?j:Array.isArray(j&&j.customCompressors)?j.customCompressors:null;
 const exportComps=l=>({customCompressors:l,_meta:{exportedAt:now(),app:"المرجع الفني — أكواد الكباسات",kind:"compressor-custom-only"}});
-function makeBackup(D,x={}){return{app:"mw-ref",schema:2,created:now(),faults:D.faults,custom:D.custom,favorites:x.favorites||[],history:x.history||[]}}
+function makeBackup(D,x={}){return{app:"mw-ref",schema:2,created:now(),faults:D.faults,custom:D.custom,favorites:x.favorites||[],history:x.history||[],lists:x.lists?cleanLists(x.lists):undefined}}
 function validateBackup(o){if(!isObj(o)||o.app!=="mw-ref")return{ok:false,reason:"الملف ليس نسخة من هذا التطبيق"};if(o.schema!==2)return{ok:false,reason:"إصدار المخطط غير متوافق: "+o.schema};
 if(!Array.isArray(o.faults)||!Array.isArray(o.custom))return{ok:false,reason:"بنية البيانات تالفة"};const ID=x=>/^[\w-]{1,40}$/.test(x)?x:uid(),faults=[],custom=[];
 for(const [i,r] of o.faults.entries()){const n=cleanFault(r);if(!n)return{ok:false,reason:"سجل عطل تالف رقم "+(i+1)};faults.push({id:ID(r.id),...n,source:T(r.source,20),createdAt:T(r.createdAt,40),updatedAt:T(r.updatedAt,40)})}
 for(const [i,c] of o.custom.entries()){const rec=cleanRec(c&&c.rec);if(!rec||!T(c.brand))return{ok:false,reason:"إضافة كباس تالفة رقم "+(i+1)};custom.push({id:ID(c.id),brand:T(c.brand,100),rec,addedAt:T(c.addedAt,40)})}
-return{ok:true,data:{faults,custom},summary:{faults:faults.length,custom:custom.length,created:o.created}}}
+return{ok:true,data:{faults,custom,lists:isObj(o.lists)?cleanLists(o.lists):null},summary:{faults:faults.length,custom:custom.length,created:o.created}}}
 
 /* بدائل الكباسات: مطابقة بالبيانات المتاحة (نفس الفريون والتطبيق والتردد وقدرة تبريد متقاربة) */
 const refN=v=>{const s=String(v??"").toUpperCase().replace(/[\s\-]/g,"");return /^R\d{2,4}[A-Z]?$/.test(s)?s:""};
@@ -54,5 +54,11 @@ out.sort((a,b)=>b.v-a.v||a.d-b.d);return{total:out.length,list:out.slice(0,max).
 function scoreN(n,fs){let s=0,l="";for(const [x,w,lb] of fs){if(!x)continue;let v=0;if(x===n)v=100;else if(x.startsWith(n))v=80;else if(x.includes(n))v=50;else continue;v=v*w+5*n.length/x.length;if(v>s){s=v;l=lb}}return{s,l}}
 function hlSplit(text,q){const t=String(text??""),ch=[...String(q??"").replace(/[\s\-_./]/g,"")].slice(0,40);if(!ch.length)return[t,"",""];
 let re;try{re=new RegExp(ch.map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[\\s\\-_./]*"),"i")}catch{return[t,"",""]}const m=re.exec(t);return m?[t.slice(0,m.index),m[0],t.slice(m.index+m[0].length)]:[t,"",""]}
- const api={scoreN,hlSplit,refN,capOf,altKey,buildAltIndex,alts,normAr,cleanFault,faultKey,parseFaults,planFaults,exportFaults,cleanRec,planComps,parseComps,exportComps,makeBackup,validateBackup,FK,TK,CK};
+ 
+/* قوائم الاختيارات: دمج وتنظيف بلا تكرار (مع توحيد الهمزات والمسافات) */
+const LISTKEYS=["deviceType","brand","category","cbrand","capp","cgas"];
+const cleanName=v=>String(v??"").replace(/[\u0000-\u001F]/g,"").replace(/\s+/g," ").trim().slice(0,60);
+function mergeOpts(...arrs){const m=new Map();for(const a of arrs)for(const v of a||[]){const c=cleanName(v);if(!c)continue;const k=normAr(c);if(!m.has(k))m.set(k,c)}return[...m.values()].sort((a,b)=>a.localeCompare(b,"ar"))}
+function cleanLists(o){const r={};LISTKEYS.forEach(k=>{r[k]=Array.isArray(o&&o[k])?mergeOpts(o[k].filter(x=>typeof x=="string").slice(0,500)):[]});return r}
+const api={LISTKEYS,cleanName,mergeOpts,cleanLists,scoreN,hlSplit,refN,capOf,altKey,buildAltIndex,alts,normAr,cleanFault,faultKey,parseFaults,planFaults,exportFaults,cleanRec,planComps,parseComps,exportComps,makeBackup,validateBackup,FK,TK,CK};
 if(typeof module!="undefined")module.exports=api;else g.SY=api})(typeof window!="undefined"?window:globalThis);
