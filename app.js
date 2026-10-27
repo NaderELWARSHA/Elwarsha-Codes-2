@@ -1,0 +1,190 @@
+"use strict";
+const ADMIN_OPEN=true; /* مؤقت: الإدارة مفتوحة بدون كلمة مرور حتى اكتمال البناء، ثم يُفعَّل القفل */
+const {e,uid,today,csv,toCsvRows,checkFile,makeStore,hist,tx}=MR,Y=SY,N=Y.normAr;
+const S=makeStore(localStorage),$=s=>document.querySelector(s),app=$("#app");
+const ld=S.get("mw_db",null);let D=ld&&Array.isArray(ld.faults)&&Array.isArray(ld.custom)?ld:{faults:[],custom:[]};
+let dirty=false,cur=location.hash,admin=ADMIN_OPEN;
+const commit=f=>tx(S,"mw_db",D,f)||(alert("تعذر الحفظ: التخزين ممتلئ أو غير متاح. لم يتم تغيير بياناتك."),false);
+const snap=()=>{const b=S.get("mw_bak",[]);b.unshift({t:new Date().toISOString(),d:JSON.parse(JSON.stringify(D))});return S.set("mw_bak",b.slice(0,3))};
+const safe=()=>snap()||confirm("تعذر أخذ نسخة احتياطية. متابعة؟");
+const LB={deviceType:"نوع الجهاز",brand:"الماركة",category:"الفئة",model:"الموديل",code:"كود العطل",title:"الوصف / العنوان",cause:"السبب المحتمل",fix:"الفحص / الحل",note:"ملاحظات",addedBy:"أضافه",enter:"طريقة الدخول",tests:"الاختبارات",exit:"طريقة الخروج",hp:"القدرة (حصان)",refrigerant:"وسيط التبريد",btu:"BTU (كما في المرجع)",kcal:"Kcal",application:"التطبيق",run_capacitor:"مكثف التشغيل",start_capacitor:"مكثف البدء",oil_qty:"كمية الزيت",oil_unit:"وحدة الزيت",amp:"التيار (A)",watt:"القدرة الكهربائية (W)",freq:"التردد (Hz)",displacement:"الإزاحة (cc)",rpm:"RPM",notes:"ملاحظات"};
+const FORMS={fault:{k:Y.FK,req:["code"],t:["cause","fix","note"]},test:{k:["deviceType","brand","category","model","title","enter","tests","exit","note"],req:["title","enter"],t:["enter","tests","exit","note"]},comp:{k:["brand","model"].concat(Y.CK),req:["brand","model"],t:["notes"]}};
+const warn=m=>`<div class="notice">${m}</div>`,tag=t=>`<span class="tag">${t}</span>`;
+const hi=(k,v,n)=>hist(S,k,v,n);
+/* ---- قاعدة الكباسات المرجعية: تُحمَّل عند أول استخدام ---- */
+let bp=null,CL=null;
+const base=()=>bp||(bp=new Promise((ok,no)=>{const s=document.createElement("script");s.src="compressors-base.js";s.onload=()=>ok(window.COMPRESSOR_DB_BRANDS||{});s.onerror=()=>{bp=null;no(new Error("تعذر تحميل قاعدة الكباسات"))};document.head.appendChild(s)}));
+async function comps(){const B=await base();if(!CL){CL=[];for(const [b,rows] of Object.entries(B))rows.forEach(r=>CL.push({b,r,n:N(b+" "+r.model),base:1}))}return CL.concat(D.custom.map(c=>({b:c.brand,r:c.rec,n:N(c.brand+" "+c.rec.model),cid:c.id})))}
+/* ---- حالة الواجهة (تبقى أثناء الجلسة: البحث والفلاتر والتمرير والمقارنة) ---- */
+const SS=makeStore(sessionStorage);
+const ST=Object.assign({f:{q:"",a:"",b:"",n:100,y:0,t:0},c:{q:"",b:"",n:100,y:0},cmp:[],dif:0},SS.get("mw_st",{}));let where=null;
+const keepST=()=>SS.set("mw_st",ST);
+const NC=new WeakMap(),nzo=o=>{let v=NC.get(o);if(!v){v={};NC.set(o,v)}return v},nz=(r,k)=>{const v=nzo(r);return k in v?v[k]:(v[k]=N(r[k]))},nb=x=>{const v=nzo(x);return "b" in v?v.b:(v.b=N(x.b))};
+const hl=(t,q)=>{const[a,b,c]=Y.hlSplit(t,q);return b?e(a)+"<mark>"+e(b)+"</mark>"+e(c):e(t)};
+const pos=v=>v!=null&&String(v).trim()!==""&&!(typeof v=="number"&&!(v>0));
+const fmt=v=>typeof v=="number"?v.toLocaleString("en",{maximumFractionDigits:3}):String(v);
+const lines=s=>String(s??"").split(/\n+|[؛;]\s*/).map(x=>x.trim()).filter(Boolean);
+const toast=m=>{let t=$("#toast");if(!t){t=document.createElement("div");t.id="toast";t.setAttribute("role","status");document.body.appendChild(t)}t.textContent=m;t.className="on";clearTimeout(toast.t);toast.t=setTimeout(()=>t.className="",1700)};
+const copy=txt=>(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("تم النسخ ✓"),()=>{try{const x=document.createElement("textarea");x.value=txt;document.body.appendChild(x);x.select();document.execCommand("copy");x.remove();toast("تم النسخ ✓")}catch{toast("تعذر النسخ")}});
+const favBtn=(k,id)=>{const on=S.get("mw_fav",[]).some(x=>x.k==k&&x.id==id);return`<button class="secondary" id="fv" type="button">${on?"★ في المفضلة":"☆ للمفضلة"}</button>`};
+function wireFav(k,id,t,h,redraw){$("#fv").onclick=()=>{let a=S.get("mw_fav",[]).filter(x=>!(x.k==k&&x.id==id));if(!$("#fv").textContent.includes("★"))a.unshift({k,id,t,h});S.set("mw_fav",a);redraw()}}
+/* ---- بحث مرتَّب بقوة المطابقة ---- */
+const FF=[["code",1,"الكود"],["brand",.7,"الماركة"],["model",.8,"الموديل"],["title",.45,"الوصف"],["deviceType",.4,"الجهاز"],["category",.3,"الفئة"],["cause",.2,"السبب"],["fix",.2,"الحل"],["enter",.2,"طريقة الدخول"],["tests",.2,"الاختبارات"]];
+function searchFaults(q,f){const n=N(q),out=[];for(const r of D.faults){if(f.t===1&&r.kind!="test"||f.t===0&&r.kind=="test"||f.a&&r.deviceType!=f.a||f.b&&r.brand!=f.b)continue;
+if(!n){out.push({r,s:0,l:""});continue}const m=Y.scoreN(n,FF.map(([k,w,l])=>[nz(r,k),w,l]));if(m.s)out.push({r,...m})}
+return out.sort((x,y)=>y.s-x.s||String(x.r.brand).localeCompare(String(y.r.brand),"ar")||String(x.r.code||x.r.title).localeCompare(String(y.r.code||y.r.title),"en",{numeric:true}))}
+function searchComps(A,q,b){const n=N(q),out=[];for(let i=0;i<A.length;i++){const x=A[i];if(b&&x.b!=b)continue;if(!n){out.push({i,s:0,l:""});continue}
+const m=Y.scoreN(n,[[nz(x.r,"model"),1,"الموديل"],[nb(x),.7,"الماركة"],[nz(x.r,"family"),.6,"السلسلة"],[nz(x.r,"refrigerant"),.3,"الفريون"]]);if(m.s)out.push({i,...m})}
+return out.sort((a,b)=>b.s-a.s||a.i-b.i)}
+/* ---- بطاقات ---- */
+const why=(l,q)=>q&&l?`<span class="why">طابق: ${l}</span>`:"";
+const fcard=(r,q,l)=>{const t=r.kind=="test";return`<a class="rc ${t?"rc-test":""}" href="#/fault/${e(r.id)}"><div class="rc-top">${t?'<span class="chip chip-info">⚙️ تيست مود</span>':`<code class="code">${hl(r.code,q)}</code>`}<span class="chip">${hl(r.brand||"كل الماركات",q)}</span>${why(l,q)}</div><div class="rc-title">${hl(r.title,q)}</div><div class="rc-meta">${hl([r.deviceType,r.model,r.category].filter(Boolean).join(" · "),q)}</div></a>`};
+const specs=r=>{const c=[];if(pos(r.hp))c.push(["🔧",r.hp+" HP"]);if(pos(r.kcal))c.push(["❄️",fmt(r.kcal)+" kcal/h"]);else if(pos(r.btu))c.push(["❄️",fmt(r.btu)+" BTU/h"]);if(pos(r.refrigerant))c.push(["🧪",r.refrigerant]);
+if(pos(r.voltage_frequency))c.push(["〰",r.voltage_frequency]);else if(pos(r.freq))c.push(["〰",r.freq+" Hz"]);if(pos(r.amp))c.push(["⚡",fmt(r.amp)+" A"]);if(pos(r.displacement))c.push(["📐",fmt(r.displacement)+" cc"]);return c.map(([i,t])=>`<span class="sp"><i>${i}</i>${e(t)}</span>`).join("")};
+let AX=null,AXk="";
+const altsFor=(A,i,max)=>{const k=A.length+":"+D.custom.map(c=>c.id).join();if(!AX||AXk!=k){AX=Y.buildAltIndex(A);AXk=k}return Y.alts(AX,A,i,max)};
+const capTxt=r=>[pos(r.kcal)?fmt(r.kcal)+" kcal/h":(pos(r.btu)?fmt(r.btu)+" BTU/h":""),pos(r.amp)?fmt(r.amp)+" A":""].filter(Boolean).join(" · ");
+const altBox=(A,i,full)=>{const a=altsFor(A,i,full?30:3);if(!a.total)return full?'<div class="alt-box">🔁 لا توجد بدائل مطابقة في البيانات المتاحة.</div>':"";
+const L=j=>`<a href="#/comp/${j}" dir="ltr"><span>${e(A[j].r.model)}</span><small>${full?e(A[j].b)+" · ":""}${e(full?capTxt(A[j].r):(pos(A[j].r.kcal)?fmt(A[j].r.kcal)+" kcal/h":capTxt(A[j].r)))}</small></a>`;
+const head=full?a.list.slice(0,8):a.list,rest=full?a.list.slice(8):[];
+return`<div class="alt-box"><b>🔁 بدائل (${a.total})</b>${full?'<small class="mu">نفس الفريون والتطبيق والتردد وقدرة تبريد متقاربة</small>':""}${head.map(L).join("")}${rest.length?`<details class="alt-more"><summary>عرض ${rest.length} بديل إضافي</summary>${rest.map(L).join("")}</details>`:""}${a.total>a.list.length?`<small>+${a.total-a.list.length} أخرى</small>`:""}</div>`};
+const ccard=(A,i,q,l)=>{const x=A[i],on=ST.cmp.includes(i);return`<div class="rc cc"><div class="cc-main"><label class="cc-sel" title="إضافة للمقارنة"><input type="checkbox" class="cmp" value="${i}" ${on?"checked":""} aria-label="مقارنة"></label><a class="cc-link" href="#/comp/${i}"><div class="rc-top"><code class="code" dir="ltr">${hl(x.r.model,q)}</code><span class="chip">${hl(x.b,q)}</span>${why(l,q)}</div><div class="specs">${specs(x.r)||'<span class="mu">لا توجد مواصفات مسجّلة</span>'}</div></a><button class="cp" type="button" data-cp="${e(x.r.model)}" aria-label="نسخ الموديل">📋</button></div>${altBox(A,i,0)}</div>`};
+const fav=()=>"";
+const empty=(msg,sugg)=>`<div class="empty"><div class="empty-ic">🔎</div><b>${msg}</b>${sugg}</div>`;
+const shorter=q=>{const n=q.replace(/[\s\-_./]/g,"");return n.length>3?n.slice(0,Math.ceil(n.length*.6)):""};
+/* ---- الصفحات ---- */
+function home(){const rs=S.get("mw_rs",[]),rv=S.get("mw_rv",[]),fv=S.get("mw_fav",[]);
+app.innerHTML=(S.ok?"":warn("التخزين المحلي غير متاح: لن تُحفظ التغييرات."))+`<button class="sbtn" data-act="search" type="button"><i>🔍</i><span>ابحث بكود عطل أو ماركة أو موديل كباس…</span></button>
+<div class="tiles"><a class="tile t-f" href="#/faults"><i>🧯</i><b>أكواد الأعطال</b><span>${D.faults.filter(x=>x.kind!="test").length} كود · ${D.faults.filter(x=>x.kind=="test").length} تيست مود</span></a><a class="tile t-c" href="#/comps"><i>🧊</i><b>مرجع الكباسات</b><span>بحث بالموديل + بدائل + مقارنة</span></a></div>
+${rv.length?`<h2 class="h">⏱️ تابع من حيث توقفت</h2><a class="rc" href="${e(rv[0].h)}"><div class="rc-title">${e(rv[0].t)}</div></a>`:""}
+${rs.length?`<h2 class="h">🕘 آخر عمليات البحث</h2><div class="chips">${rs.slice(0,6).map(x=>`<button class="chip chip-btn" data-gq="${e(x.q)}" type="button">${e(x.q)}</button>`).join("")}</div>`:""}
+${fv.length?`<h2 class="h">⭐ المفضلة</h2>${fv.slice(0,3).map(x=>`<a class="rc" href="${e(x.h)}"><div class="rc-title">${e(x.t)}</div></a>`).join("")}${fv.length>3?'<a class="more" href="#/favs">عرض كل المفضلة ◂</a>':""}`:""}
+<div class="foot-links"><a href="#/admin">🗂️ الإدارة</a><a href="#/settings">🎨 المظهر</a></div>`;
+document.querySelectorAll("[data-gq]").forEach(b=>b.onclick=()=>openSearch(b.dataset.gq))}
+function favs(){const f=S.get("mw_fav",[]),r=S.get("mw_rv",[]),q=S.get("mw_rs",[]);
+const L=a=>a.map(x=>`<a class="rc" href="${e(x.h)}"><div class="rc-title">${e(x.t)}</div></a>`).join("");
+app.innerHTML=`<h2 class="h">⭐ المفضلة</h2>${f.length?L(f):empty("لا توجد عناصر في المفضلة","<p class='mu'>افتح أي عطل أو كباس واضغط «☆ للمفضلة».</p>")}
+<h2 class="h">⏱️ شاهدتها مؤخرًا</h2>${r.length?L(r):'<p class="mu">لا يوجد سجل تصفح.</p>'}
+<h2 class="h">🕘 عمليات البحث</h2>${q.length?`<div class="chips">${q.map(x=>`<button class="chip chip-btn" data-gq="${e(x.q)}" type="button">${e(x.q)}</button>`).join("")}</div><button class="secondary" id="cls" type="button" style="margin-top:10px">مسح السجل</button>`:'<p class="mu">لا توجد عمليات بحث.</p>'}`;
+document.querySelectorAll("[data-gq]").forEach(b=>b.onclick=()=>openSearch(b.dataset.gq));const c=$("#cls");if(c)c.onclick=()=>{S.remove("mw_rs");S.remove("mw_rv");favs()}}
+/* ---- البحث العام ---- */
+let gt=0;
+function openSearch(q0=""){if($("#gs"))return;const o=document.createElement("div");o.id="gs";o.setAttribute("role","dialog");o.innerHTML=`<div class="gs-box"><div class="gs-head"><input id="gsq" type="search" inputmode="search" placeholder="🔍 كود، ماركة، موديل…" autocomplete="off"><button class="secondary" id="gsx" type="button" style="flex:none">إغلاق</button></div><div id="gsr"><p class="mu">اكتب حرفين على الأقل. يشمل الأعطال والتيست مود والكباسات.</p></div></div>`;document.body.appendChild(o);
+const close=()=>{const v=$("#gsq").value.trim();if(v.length>1)hi("mw_rs",{q:v});o.remove()};$("#gsx").onclick=close;o.onclick=ev=>{if(ev.target===o)close()};$("#gsr").onclick=ev=>{if(ev.target.closest("a")){const v=$("#gsq").value.trim();if(v.length>1)hi("mw_rs",{q:v});o.remove()}};o.onkeydown=ev=>{if(ev.key=="Escape")close()};
+let tm;const run=async()=>{const qq=$("#gsq").value.trim(),id=++gt;if(N(qq).length<2){$("#gsr").innerHTML='<p class="mu">اكتب حرفين على الأقل.</p>';return}
+const fa=searchFaults(qq,{});$("#gsr").innerHTML=(fa.length?`<h2 class="h">🧯 الأعطال (${fa.length})</h2><div class="cards">${fa.slice(0,6).map(x=>fcard(x.r,qq,x.l)).join("")}</div>${fa.length>6?`<a class="more" href="#/faults/${encodeURIComponent(qq)}">عرض كل نتائج الأعطال ◂</a>`:""}`:"")+'<div id="gsc" class="mu">جارٍ البحث في الكباسات…</div>';
+try{const A=await comps();if(id!==gt)return;const r=searchComps(A,qq,"");const el=$("#gsc");if(el)el.outerHTML=(r.length?`<h2 class="h">🧊 الكباسات (${r.length})</h2><div class="cards">${r.slice(0,6).map(x=>ccard(A,x.i,qq,x.l)).join("")}</div>${r.length>6?`<a class="more" href="#/comps/${encodeURIComponent(qq)}">عرض كل نتائج الكباسات ◂</a>`:""}`:"")+(!fa.length&&!r.length?empty("لا توجد نتائج لـ «"+e(qq)+"»","<p class='mu'>جرّب جزءًا أقصر من الكود أو الموديل، بدون شرطات.</p>"):"")}catch{const el=$("#gsc");if(el)el.innerHTML='تعذر تحميل قاعدة الكباسات. <button class="secondary" id="rt" type="button">إعادة المحاولة</button>';const b=$("#rt");if(b)b.onclick=run}};
+$("#gsq").oninput=()=>{clearTimeout(tm);tm=setTimeout(run,120)};$("#gsq").value=q0;$("#gsq").focus();if(q0)run()}
+document.addEventListener("click",ev=>{const c=ev.target.closest("[data-cp]");if(c){ev.preventDefault();ev.stopPropagation();return copy(c.dataset.cp)}const b=ev.target.closest("[data-act]");if(!b)return;if(b.dataset.act=="search")openSearch();else if(b.dataset.act=="theme")BR.toggle()});
+document.addEventListener("change",ev=>{const c=ev.target.closest(".cmp");if(!c)return;const i=+c.value;if(c.checked){if(ST.cmp.length>=4){c.checked=false;return toast("الحد الأقصى 4 كباسات")}ST.cmp.push(i)}else ST.cmp=ST.cmp.filter(x=>x!==i);keepST();tray()});
+function tray(){let t=$("#tray");const n=ST.cmp.length,on=where=="c"||/^#\/comp\//.test(location.hash);if(!n||!on){if(t)t.remove();return}if(!t){t=document.createElement("div");t.id="tray";document.body.appendChild(t)}
+t.innerHTML=`<a class="primary" href="#/cmp/${ST.cmp.join(",")}">⚖️ قارن (${n})</a><button class="secondary" id="trx" type="button">مسح</button>`;$("#trx").onclick=()=>{ST.cmp=[];keepST();document.querySelectorAll(".cmp").forEach(c=>c.checked=false);tray()}}
+function listShell(kind,q,opts){return`<div class="sbox"><input id="q" type="search" inputmode="search" placeholder="${kind=="f"?"كود، ماركة، موديل أو وصف العطل…":"رقم الموديل أو جزء منه، أو الماركة…"}" autocomplete="off" value="${e(q)}"><button class="x" id="qx" type="button" aria-label="مسح البحث" hidden>✕</button></div>${opts}<div id="meta" class="mu meta"></div><div id="res" class="cards"></div><div id="more"></div>`}
+function faults(test,q0){const F=ST.f;F.t=test?1:0;where="f";if(q0!=null&&q0!==""){F.q=q0;F.n=100;F.y=0}
+const uq=k=>[...new Set(D.faults.filter(r=>(r.kind=="test")==!!test).map(r=>r[k]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ar")),op=(a,v)=>a.map(x=>`<option ${x==v?"selected":""}>${e(x)}</option>`).join("");
+app.innerHTML=`<div class="tabs"><a href="#/faults" class="${test?"":"on"}">🧯 الأعطال</a><a href="#/tests" class="${test?"on":""}">⚙️ تيست مود</a></div>`+listShell("f",F.q,`<div class="filters"><select id="a" aria-label="الجهاز"><option value="">كل الأجهزة</option>${op(uq("deviceType"),F.a)}</select><select id="b" aria-label="الماركة"><option value="">كل الماركات</option>${op(uq("brand"),F.b)}</select><button class="secondary" id="rf" type="button" hidden>مسح الفلاتر</button></div>${admin?`<div class="row"><a class="primary" href="#/new/${test?"test":"fault"}">➕ ${test?"تيست مود جديد":"كود جديد"}</a></div>`:""}`);
+const go=keep=>{if(!$("#qx"))return;if(!keep)F.n=100;const q=F.q.trim(),r=searchFaults(q,F);keepST();$("#qx").hidden=!F.q;$("#rf").hidden=!(F.a||F.b);$("#meta").textContent=r.length?`${r.length} نتيجة${q?" — الأقرب أولًا":""}`:"";
+let h;if(r.length)h=r.slice(0,F.n).map(x=>fcard(x.r,q,q?x.l:"")).join("");else if(!D.faults.length)h=empty("لا توجد أكواد بعد",`<p class="mu">استورد ملف أكواد أو أضف من الإدارة.</p><a class="primary" href="#/admin">🗂️ الإدارة</a>`);
+else{const sh=shorter(q);h=empty(q?`لا توجد نتائج لـ «${e(q)}»`:"لا توجد سجلات بهذه الفلاتر",`<p class="mu">جرّب جزءًا أقصر من الكود أو الماركة${F.a||F.b?"، أو أزل الفلاتر":""}.</p><div class="chips">${sh?`<button class="chip chip-btn" id="sg" type="button">جرّب «${e(sh)}»</button>`:""}${F.a||F.b?'<button class="chip chip-btn" id="sg2" type="button">إزالة الفلاتر</button>':""}<a class="chip chip-btn" href="#/comps/${encodeURIComponent(q)}">ابحث في الكباسات</a></div>`)}
+$("#res").innerHTML=h;$("#more").innerHTML=r.length>F.n?`<button class="secondary" id="mb" type="button" style="width:100%">عرض المزيد (${r.length-F.n})</button>`:"";
+if($("#mb"))$("#mb").onclick=()=>{F.n+=100;go(1)};if($("#sg"))$("#sg").onclick=()=>{$("#q").value=F.q=shorter(q);go()};if($("#sg2"))$("#sg2").onclick=()=>{F.a=F.b="";$("#a").value=$("#b").value="";go()}};
+let tm;$("#q").oninput=ev=>{F.q=ev.target.value;clearTimeout(tm);tm=setTimeout(go,90)};$("#q").onchange=()=>{if(F.q.trim().length>1)hi("mw_rs",{q:F.q.trim()})};$("#qx").onclick=()=>{$("#q").value=F.q="";go();$("#q").focus()};
+$("#a").onchange=ev=>{F.a=ev.target.value;go()};$("#b").onchange=ev=>{F.b=ev.target.value;go()};$("#rf").onclick=()=>{F.a=F.b="";$("#a").value=$("#b").value="";go()};go(1);requestAnimationFrame(()=>scrollTo(0,F.y||0))}
+const sec=(ic,t,b)=>b?`<section class="sec"><h3><i>${ic}</i>${t}</h3>${b}</section>`:"";
+const olist=(s,ord)=>{const a=lines(s),k=ord?"ol":"ul";return a.length>1?`<${k} class="steps">${a.map(x=>`<li>${e(x)}</li>`).join("")}</${k}>`:a.length?`<p>${e(a[0])}</p>`:""};
+const kv=(o,ks)=>{const r=ks.filter(([k])=>o[k]).map(([k,l])=>`<div class="kv"><span>${l}</span><b>${e(o[k])}</b></div>`).join("");return r?`<div class="kvs">${r}</div>`:""};
+function fdetail(id){const r=D.faults.find(x=>x.id==id);if(!r)return app.innerHTML=warn("السجل غير موجود");const test=r.kind=="test",t=(test?"تيست مود: ":"")+(r.code||r.title),h="#/fault/"+id,back=test?"#/tests":"#/faults";hi("mw_rv",{id,t:t+" — "+(r.brand||""),h});
+const all=[r.code&&"كود العطل: "+r.code,"الماركة: "+(r.brand||"كل الماركات"),r.deviceType&&"الجهاز: "+r.deviceType,r.model&&"الموديل: "+r.model,"الوصف: "+r.title,r.cause&&"الأسباب:\n"+lines(r.cause).map(x=>"- "+x).join("\n"),r.fix&&"خطوات الفحص والحل:\n"+lines(r.fix).map((x,i)=>(i+1)+". "+x).join("\n"),r.enter&&"طريقة الدخول:\n"+r.enter,r.tests&&"الاختبارات:\n"+r.tests,r.exit&&"طريقة الخروج:\n"+r.exit,r.note&&"ملاحظات: "+r.note].filter(Boolean).join("\n");
+const rel=test?[]:D.faults.filter(x=>x.id!=id&&x.kind!="test"&&N(x.code)==N(r.code));
+app.innerHTML=`<div class="dbar"><a class="back" href="${back}">← النتائج</a><div class="dact">${favBtn("f",id)}<button class="secondary" id="ca" type="button">📋 نسخ الكل</button></div></div>
+<div class="hero"><div class="hero-top">${test?'<span class="chip chip-info">⚙️ تيست مود</span>':`<code class="code big">${e(r.code)}</code><button class="cp lbl" type="button" data-cp="${e(r.code)}">📋 نسخ الكود</button>`}</div><h2>${e(r.title)}</h2><div class="chips"><span class="chip">${e(r.brand||"كل الماركات")}</span>${r.deviceType?`<span class="chip">${e(r.deviceType)}</span>`:""}${r.model?`<span class="chip">${e(r.model)}</span>`:""}</div></div>
+${!test&&!r.cause&&!r.fix?'<div class="notice">بيانات هذا العطل ناقصة: لا أسباب ولا خطوات مسجّلة.</div>':""}
+${sec("🧩","الأجهزة المتوافقة",kv(r,[["deviceType","الجهاز"],["brand","الماركة"],["category","الفئة"],["model","الموديل"]])||"")}
+${test?sec("🚪","طريقة الدخول",olist(r.enter,1))+sec("🧪","الاختبارات",olist(r.tests,1))+sec("↩️","طريقة الخروج",olist(r.exit,1)):sec("🔍","الأسباب المحتملة",r.cause?olist(r.cause,0):'<p class="mu">لم تُسجَّل أسباب لهذا العطل بعد.</p>')+sec("🛠️","خطوات الفحص والحل",r.fix?olist(r.fix,1):'<p class="mu">لم تُسجَّل خطوات بعد.</p>')}
+${r.note?`<details class="sec" open><summary><i>📝</i>ملاحظات</summary><p>${e(r.note)}</p></details>`:""}
+${rel.length?`<h2 class="h">نفس الكود عند ماركات/موديلات أخرى</h2><div class="cards">${rel.map(x=>fcard(x,"","")).join("")}</div>`:""}
+${admin?`<div class="row"><a class="secondary" href="#/edit/${test?"test":"fault"}/${e(id)}">✏️ تعديل</a><button class="danger-btn" id="del" type="button">🗑️ حذف</button></div>`:""}`;
+$("#ca").onclick=()=>copy(all);wireFav("f",id,t,h,()=>fdetail(id));if(admin)$("#del").onclick=()=>{if(confirm("حذف نهائي؟")&&safe()&&commit(d=>{d.faults=d.faults.filter(x=>x.id!=id)}))location.hash=back}}
+async function compsPage(q0){const C=ST.c;where="c";if(q0!=null&&q0!==""){C.q=q0;C.n=100;C.y=0}app.innerHTML='<div class="empty"><div class="empty-ic">⏳</div><b>جارٍ تحميل قاعدة الكباسات…</b></div>';let A;
+try{A=await comps()}catch(x){return app.innerHTML=empty("تعذر تحميل قاعدة الكباسات",`<p class="mu">${navigator.onLine?"تأكد من وجود الملف compressors-base.js.":"أنت غير متصل ولم تُحفظ القاعدة على الجهاز بعد. اتصل بالإنترنت مرة واحدة."}</p><button class="primary" id="rt" type="button">إعادة المحاولة</button>`),$("#rt").onclick=()=>compsPage()}
+const brands=[...new Set(A.map(x=>x.b))].sort((a,b)=>a.localeCompare(b,"ar"));
+app.innerHTML=listShell("c",C.q,`<div class="filters"><select id="b" aria-label="الماركة"><option value="">كل الماركات (${brands.length})</option>${brands.map(x=>`<option ${x==C.b?"selected":""}>${e(x)}</option>`).join("")}</select><button class="secondary" id="rf" type="button" hidden>مسح الفلتر</button></div>${admin?'<div class="row"><a class="primary" href="#/new/comp">➕ إضافة كباس</a></div>':""}`);
+const go=keep=>{if(!$("#qx"))return;if(!keep)C.n=100;const q=C.q.trim(),r=searchComps(A,q,C.b);keepST();$("#qx").hidden=!C.q;$("#rf").hidden=!C.b;$("#meta").textContent=r.length?`${r.length} نتيجة${q?" — الأقرب أولًا":""}`:"";
+let h;if(r.length)h=r.slice(0,C.n).map(x=>ccard(A,x.i,q,q?x.l:"")).join("");else{const sh=shorter(q);h=empty(`لا توجد نتائج لـ «${e(q)}»`,`<p class="mu">جرّب جزءًا أقصر من رقم الموديل، بدون شرطات أو مسافات.</p><div class="chips">${sh?`<button class="chip chip-btn" id="sg" type="button">جرّب «${e(sh)}»</button>`:""}${C.b?'<button class="chip chip-btn" id="sg2" type="button">كل الماركات</button>':""}<a class="chip chip-btn" href="#/faults/${encodeURIComponent(q)}">ابحث في الأعطال</a></div>`)}
+$("#res").innerHTML=h;$("#more").innerHTML=r.length>C.n?`<button class="secondary" id="mb" type="button" style="width:100%">عرض المزيد (${r.length-C.n})</button>`:"";
+if($("#mb"))$("#mb").onclick=()=>{C.n+=100;go(1)};if($("#sg"))$("#sg").onclick=()=>{$("#q").value=C.q=shorter(q);go()};if($("#sg2"))$("#sg2").onclick=()=>{C.b="";$("#b").value="";go()};tray()};
+let tm;$("#q").oninput=ev=>{C.q=ev.target.value;clearTimeout(tm);tm=setTimeout(go,90)};$("#q").onchange=()=>{if(C.q.trim().length>1)hi("mw_rs",{q:C.q.trim()})};$("#qx").onclick=()=>{$("#q").value=C.q="";go();$("#q").focus()};
+$("#b").onchange=ev=>{C.b=ev.target.value;go()};$("#rf").onclick=()=>{C.b="";$("#b").value="";go()};go(1);requestAnimationFrame(()=>scrollTo(0,C.y||0))}
+const DL={model:"الموديل",family:"السلسلة",type:"النوع",application:"التطبيق",kcal:"قدرة التبريد",btu:"قدرة التبريد",hp:"القدرة الحصانية",watt:"القدرة الكهربائية",voltage_frequency:"الجهد والتردد",freq:"التردد",phase:"الأطوار",amp:"التيار",run_capacitor:"مكثف التشغيل",start_capacitor:"مكثف البدء",refrigerant:"وسيط التبريد",oil_qty:"كمية الزيت",oil_unit:"وحدة الزيت",displacement:"الإزاحة الحجمية",rpm:"السرعة",notes:"ملاحظات"};
+const UN={kcal:"kcal/h",btu:"BTU/h",hp:"HP",watt:"W",freq:"Hz",amp:"A",displacement:"cc",rpm:"RPM"};
+const GR=[["🏷️","التعريف",["family","type","application"]],["❄️","قدرة التبريد",["kcal","btu"]],["⚡","الكهرباء",["voltage_frequency","freq","phase","amp","watt","hp","run_capacitor","start_capacitor"]],["🧪","وسيط التبريد والزيت",["refrigerant","oil_qty","oil_unit"]],["📐","الإزاحة والدوران",["displacement","rpm"]],["📝","ملاحظات",["notes"]]];
+const row=(r,k)=>pos(r[k])&&typeof r[k]!="object"?`<div class="kv"><span>${DL[k]||k}</span><b dir="auto">${e(fmt(r[k]))}${UN[k]?` <u>${UN[k]}</u>`:""}</b></div>`:"";
+async function cdetail(i){let A;try{A=await comps()}catch{return app.innerHTML=empty("تعذر تحميل قاعدة الكباسات",'<a class="primary" href="#/comps">رجوع</a>')}const x=A[i];if(!x)return app.innerHTML=warn("السجل غير موجود");where=null;const t=x.r.model+" — "+x.b,h="#/comp/"+i;hi("mw_rv",{id:"c"+i,t,h});
+const tc=x.r.temp_capacity&&Object.keys(x.r.temp_capacity).length?`<table class="tc"><tr><th>درجة التبخير °C</th><th>السعة (W)</th></tr>${Object.entries(x.r.temp_capacity).map(([a,b])=>`<tr><td dir="ltr">${e(a)}</td><td dir="ltr">${e(fmt(b))}</td></tr>`).join("")}</table>`:"";
+const gs=GR.map(([ic,t,ks])=>{const rw=ks.map(k=>row(x.r,k)).join(""),b=(rw?`<div class="kvs">${rw}</div>`:"")+(t=="قدرة التبريد"?tc:"");return b?sec(ic,t,b):""}).join("");
+const all=[x.b+" — "+x.r.model].concat(GR.flatMap(g=>g[2]).filter(k=>pos(x.r[k])&&typeof x.r[k]!="object").map(k=>(DL[k]||k)+": "+fmt(x.r[k])+(UN[k]?" "+UN[k]:""))).join("\n"),on=ST.cmp.includes(i);
+app.innerHTML=`<div class="dbar"><a class="back" href="#/comps">← النتائج</a><div class="dact">${favBtn("c","c"+i)}<button class="secondary" id="ca" type="button">📋 نسخ الكل</button></div></div>
+<div class="hero"><div class="hero-top"><code class="code big" dir="ltr">${e(x.r.model)}</code><button class="cp lbl" type="button" data-cp="${e(x.r.model)}">📋 نسخ الموديل</button></div><div class="chips"><span class="chip">${e(x.b)}</span></div><div class="specs">${specs(x.r)}</div><div class="row"><button class="${on?"secondary":"primary"}" id="cm1" type="button">${on?"✓ ضمن المقارنة":"⚖️ أضف للمقارنة"}</button></div></div>
+${altBox(A,i,1)}${gs||'<div class="notice">لا توجد مواصفات مسجّلة لهذا الموديل.</div>'}
+${admin&&x.cid?`<div class="row"><a class="secondary" href="#/edit/comp/${e(x.cid)}">✏️ تعديل</a><button class="danger-btn" id="del" type="button">🗑️ حذف</button></div>`:""}`;
+$("#ca").onclick=()=>copy(all);wireFav("c","c"+i,t,h,()=>cdetail(i));$("#cm1").onclick=()=>{if(ST.cmp.includes(i))ST.cmp=ST.cmp.filter(v=>v!==i);else if(ST.cmp.length>=4)return toast("الحد الأقصى 4 كباسات");else ST.cmp.push(i);keepST();cdetail(i)};tray();
+if(admin&&x.cid)$("#del").onclick=()=>{if(confirm("حذف نهائي؟")&&safe()&&commit(d=>{d.custom=d.custom.filter(c=>c.id!=x.cid)}))location.hash="#/comps"}}
+const CR=[["model","الموديل",""],["hp","القدرة الحصانية","HP"],["kcal","قدرة التبريد","kcal/h"],["btu","قدرة التبريد","BTU/h"],["watt","القدرة الكهربائية","W"],["refrigerant","وسيط التبريد",""],["application","التطبيق",""],["voltage_frequency","الجهد والتردد",""],["freq","التردد","Hz"],["phase","الأطوار",""],["amp","التيار","A"],["displacement","الإزاحة الحجمية","cc"],["rpm","السرعة","RPM"],["oil_qty","كمية الزيت",""],["oil_unit","وحدة الزيت",""],["run_capacitor","مكثف التشغيل",""],["start_capacitor","مكثف البدء",""],["notes","ملاحظات",""]];
+async function cmpView(ids){let A;try{A=await comps()}catch{return app.innerHTML=empty("تعذر تحميل قاعدة الكباسات",'<a class="primary" href="#/comps">رجوع</a>')}const ix=ids.split(",").map(Number).filter(i=>A[i]);ST.cmp=ix;keepST();const rs=ix.map(i=>A[i]);
+if(rs.length<2)return app.innerHTML=empty("اختر كباسين على الأقل للمقارنة",'<a class="primary" href="#/comps">اختيار كباسات</a>');
+const val=(x,k)=>pos(x.r[k])&&typeof x.r[k]!="object"?fmt(x.r[k]):"غير متاح";
+const rows=CR.map(([k,l,u])=>{const v=rs.map(x=>val(x,k));if(v.every(a=>a=="غير متاح"))return"";const d=new Set(v).size>1;if(ST.dif&&!d)return"";return`<tr class="${d?"df":""}"><th scope="row">${l}${u?` <u>${u}</u>`:""}</th>${v.map(a=>`<td dir="auto" class="${a=="غير متاح"?"na":""}">${e(a)}</td>`).join("")}</tr>`}).join("");
+app.innerHTML=`<div class="dbar"><a class="back" href="#/comps">← الكباسات</a><div class="dact"><button class="secondary" id="dif" type="button">${ST.dif?"عرض الكل":"الفروق فقط"}</button></div></div>
+<div class="tw"><table class="cmpt"><thead><tr><th></th>${rs.map((x,k)=>`<th><a href="#/comp/${ix[k]}" dir="ltr">${e(x.r.model)}</a><small>${e(x.b)}</small><button class="rm" data-rm="${ix[k]}" type="button" aria-label="إزالة">✕</button></th>`).join("")}</tr></thead><tbody>${rows||'<tr><td colspan="9">لا توجد فروق في البيانات المتاحة.</td></tr>'}</tbody></table></div>
+<p class="mu">الصفوف الملوّنة هي الفروق. «غير متاح» = لا توجد قيمة مسجّلة. قرار الاستبدال يحتاج مراجعة متطلبات الجهاز وظروف التشغيل.</p>`;
+$("#dif").onclick=()=>{ST.dif=ST.dif?0:1;keepST();cmpView(ids)};document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{const n=ix.filter(i=>i!=b.dataset.rm);location.hash=n.length?"#/cmp/"+n.join(","):"#/comps"})}
+
+/* ---- نموذج الإضافة والتعديل ---- */
+function form(kind,id){if(!admin)return location.hash="#/admin";const F=FORMS[kind];let rec={};
+if(id){if(kind=="comp"){const c=D.custom.find(x=>x.id==id);if(!c)return app.innerHTML=warn("غير موجود");rec={brand:c.brand,...c.rec}}else{rec=D.faults.find(x=>x.id==id)||{}}}
+const dv=[...new Set(D.faults.map(r=>r.deviceType).filter(Boolean))];
+app.innerHTML=`<h2>${id?"تعديل":"إضافة"} ${kind=="comp"?"كباس":kind=="test"?"تيست مود":"كود عطل"}</h2><form id="f"><datalist id="dl">${dv.map(x=>`<option value="${e(x)}">`).join("")}</datalist>${F.k.map(k=>`<label>${LB[k]||k}${F.req.includes(k)?" *":""}${F.t.includes(k)?`<textarea name="${k}" rows="3">${e(rec[k])}</textarea>`:`<input name="${k}" ${k=="deviceType"?'list="dl"':""} type="${k=="reviewedAt"?"date":"text"}" value="${e(rec[k])}">`}</label>`).join("")}<div class="row"><button class="primary">حفظ</button><a class="secondary" href="#/${kind=="comp"?"comps":"faults"}" style="text-align:center">إلغاء</a></div></form>`;
+$("#f").oninput=()=>dirty=true;$("#f").onsubmit=async ev=>{ev.preventDefault();const bt=ev.submitter;if(bt.disabled)return;bt.disabled=true;const fail=()=>{bt.disabled=false};
+const n=Object.fromEntries([...new FormData(ev.target)].map(([a,b])=>[a,b.trim()]).filter(([a,b])=>b));const miss=F.req.filter(k=>!n[k]);if(miss.length){fail();return alert("حقول أساسية ناقصة: "+miss.map(k=>LB[k]).join("، "))}
+let mut;if(kind=="comp"){const {brand,...r}=n,rr=Y.cleanRec(r);if(!rr){fail();return alert("بيانات غير صالحة")}
+try{const B=await base();const dup=Y.planComps(B,D.custom.filter(c=>c.id!=id),[{brand,rec:rr}]).dup.length;if(dup&&!confirm("يوجد كباس بنفس الماركة والموديل (في المرجع أو إضافاتك). حفظ على أي حال؟")){fail();return}}catch{}
+mut=d=>{if(id){const c=d.custom.find(x=>x.id==id);c.brand=brand;c.rec=rr}else d.custom.push({id:uid(),brand,rec:rr,addedAt:new Date().toISOString()})}}
+else{const c=Y.cleanFault(kind=="test"?{...n,kind:"test"}:n);if(!c){fail();return alert("بيانات غير صالحة")}const o=D.faults.filter(x=>x.id!=id);if(Y.planFaults(o,[c]).dup.length&&!confirm("يوجد سجل مكرر بنفس النوع والماركة والموديل والكود. حفظ على أي حال؟")){fail();return}
+mut=d=>{const now=new Date().toISOString();if(id){const i=d.faults.findIndex(x=>x.id==id);const {id:a,source:s,createdAt:ca}=d.faults[i];d.faults[i]={id:a,...c,source:s||"manual",createdAt:ca,updatedAt:now}}else d.faults.push({id:uid(),...c,source:"manual",createdAt:now,updatedAt:now})}}
+snap();if(!commit(mut)){fail();return}dirty=false;location.hash="#/admin"}}
+/* ---- الإدارة والاستيراد والتصدير ---- */
+const dl=(n,c,m)=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([c],{type:m+";charset=utf-8"}));a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+async function readFile(f){const t=await f.text(),b=checkFile(f.name,f.size,t);if(b){alert(b);return null}return t}
+function admPage(){if(!admin)return app.innerHTML=warn("الإدارة مقفلة.");
+app.innerHTML=`${ADMIN_OPEN?warn("الإدارة مفتوحة مؤقتًا بدون كلمة مرور أثناء البناء. لا تنشر الرابط علنًا قبل تفعيل القفل."):""}<h2>الإدارة</h2><div class="row"><a class="primary" href="#/new/fault" style="text-align:center">+ كود عطل</a><a class="primary" href="#/new/test" style="text-align:center">+ تيست مود</a><a class="primary" href="#/new/comp" style="text-align:center">+ كباس</a></div>
+<h2>استيراد من نظام الورشة (أو من هذا التطبيق)</h2><label>أكواد أعطال وتيست مود (JSON، صيغة faultCodes)<input id="if" type="file" accept=".json"></label><label>إضافات كباسات (JSON، صيغة customCompressors)<input id="ic" type="file" accept=".json"></label><div id="rep"></div>
+<h2>تصدير بصيغة النظام</h2><div class="row"><button class="secondary" id="xf">أكواد الأعطال JSON</button><button class="secondary" id="xc">إضافات الكباسات JSON</button><button class="secondary" id="xv">أعطال CSV</button></div>
+<h2>نسخة احتياطية كاملة</h2><div class="row"><button class="secondary" id="xb">تنزيل نسخة كاملة</button></div><label>استعادة من ملف<input id="rf" type="file" accept=".json"></label>
+<h2>ملخص</h2><div class="item">${D.faults.filter(x=>x.kind!="test").length} كود · ${D.faults.filter(x=>x.kind=="test").length} تيست مود · ${D.custom.length} إضافة كباس</div>`;
+const R=$("#rep"),preview=(p,apply,label)=>{if(!p.next)return R.innerHTML=warn(e(p.err[0]));R.innerHTML=warn(`معاينة: سيُضاف ${p.acc.length} · مكرر ${p.dup.length} · مرفوض ${p.err.length}<br>${p.err.slice(0,20).map(e).join("<br>")}`)+(p.acc.length?'<div class="row"><button class="primary" id="ok">اعتماد الاستيراد</button></div>':"");
+if(p.acc.length)$("#ok").onclick=ev=>{ev.target.disabled=true;snap();if(commit(apply))R.innerHTML=warn(`تم استيراد ${p.acc.length} ${label}.`);else ev.target.disabled=false}};
+const json=t=>{try{return JSON.parse(t)}catch{R.innerHTML=warn("ملف تالف: JSON غير صالح");return undefined}};
+$("#if").onchange=async ev=>{const t=await readFile(ev.target.files[0]);if(t==null)return;const j=json(t);if(j===undefined)return;const p=Y.planFaults(D.faults,Y.parseFaults(j));preview(p,d=>{d.faults=d.faults.concat(p.acc)},"سجل")};
+$("#ic").onchange=async ev=>{const t=await readFile(ev.target.files[0]);if(t==null)return;const j=json(t);if(j===undefined)return;let B={};try{B=await base()}catch{R.innerHTML=warn("تعذر تحميل القاعدة المرجعية؛ لن يُفحص التكرار معها.")}
+const p=Y.planComps(B,D.custom,Y.parseComps(j));preview(p,d=>{d.custom=d.custom.concat(p.acc)},"كباس")};
+$("#xf").onclick=()=>dl("اكواد-اعطال.json",JSON.stringify(Y.exportFaults(D.faults),null,2),"application/json");
+$("#xc").onclick=()=>D.custom.length?dl("اضافات-كباسات.json",JSON.stringify(Y.exportComps(D.custom),null,2),"application/json"):alert("لا توجد إضافات كباسات للتصدير.");
+$("#xv").onclick=()=>dl("اكواد-اعطال.csv",toCsvRows(["kind","deviceType","brand","category","model","code","title","cause","fix","note","enter","tests","exit"],D.faults),"text/csv");
+$("#xb").onclick=()=>dl("نسخة-المرجع-الفني.json",JSON.stringify(Y.makeBackup(D,{favorites:S.get("mw_fav",[]),history:S.get("mw_rs",[])}),null,1),"application/json");
+$("#rf").onchange=async ev=>{const t=await readFile(ev.target.files[0]);if(t==null)return;const o=json(t);if(o===undefined)return;const v=Y.validateBackup(o);if(!v.ok)return alert("نسخة مرفوضة: "+v.reason);
+if(!confirm(`ستُستبدل البيانات الحالية (${D.faults.length} سجل أعطال / ${D.custom.length} إضافة كباس) بـ ${v.summary.faults} / ${v.summary.custom}. تؤخذ نسخة من الحالة الحالية أولًا. متابعة؟`))return;
+if(safe()&&commit(d=>{d.faults=v.data.faults;d.custom=v.data.custom})){if(Array.isArray(o.favorites))S.set("mw_fav",o.favorites.filter(x=>x&&typeof x.h=="string"&&x.h.startsWith("#/")).slice(0,100));admPage()}}}
+/* ---- الموجّه (SPA) ---- */
+const TT={admin:"🗂️ الإدارة والاستيراد والتصدير",settings:"🎨 المظهر والألوان",new:"➕ إضافة",edit:"✏️ تعديل",favs:"",faults:"",tests:"",comps:"",fault:"",comp:"",cmp:""};
+async function route(){const h=location.hash.slice(2).split("/").map(decodeURIComponent);scrollTo(0,0);const gs=$("#gs");if(gs)gs.remove();const tr=$("#tray");if(tr)tr.remove();try{const m=h[0];$("#top").innerHTML=m===""||!(m in TT)?BR.header():(["admin","settings","new","edit"].includes(m)?BR.topbar(TT[m]):"");BR.apply();where=null;navBar(m);
+if(m==="")home();else if(m=="faults")faults(0,h[1]);else if(m=="tests")faults(1,h[1]);else if(m=="favs")favs();else if(m=="fault")fdetail(h[1]);else if(m=="comps")await compsPage(h[1]);else if(m=="comp")await cdetail(+h[1]);else if(m=="cmp")await cmpView(h[1]);else if(m=="admin")admPage();else if(m=="settings")BR.settingsPage(app);else if(m=="new")form(h[1]);else if(m=="edit")form(h[1],h[2]);else home()}
+catch(x){console.error(x);app.innerHTML=warn("حدث خطأ غير متوقع. ارجع للرئيسية وحاول مجددًا.")}}
+addEventListener("hashchange",()=>{if(dirty&&!confirm("لديك تعديلات غير محفوظة. تجاهلها؟")){history.replaceState(null,"",cur);return}dirty=false;cur=location.hash;route()});
+addEventListener("beforeunload",ev=>{if(dirty){ev.preventDefault();ev.returnValue=""}});route();
+if("serviceWorker"in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+function navBar(m){const g={"":"h",faults:"f",tests:"f",fault:"f",comps:"c",comp:"c",cmp:"c",favs:"s"}[m]||"";let n=$("#bn");if(!n){n=document.createElement("nav");n.id="bn";n.setAttribute("aria-label","التنقل");document.body.appendChild(n)}
+n.innerHTML=[["h","#/","🏠","الرئيسية"],["f","#/faults","🧯","الأعطال"],["c","#/comps","🧊","الكباسات"],["s","#/favs","⭐","المفضلة"]].map(([k,h,i,t])=>`<a href="${h}" class="${g==k?"on":""}"${g==k?' aria-current="page"':""}><i>${i}</i>${t}</a>`).join("")+'<button type="button" data-act="search"><i>🔍</i>بحث</button>'}
+addEventListener("scroll",()=>{if(where){ST[where].y=scrollY;clearTimeout(addEventListener.t);addEventListener.t=setTimeout(keepST,200)}},{passive:true});
+const netB=()=>{let b=$("#net");if(navigator.onLine){if(b)b.remove();return}if(!b){b=document.createElement("div");b.id="net";b.setAttribute("role","status");document.body.prepend(b)}b.textContent="📡 أنت غير متصل — البيانات المحفوظة على الجهاز تعمل بشكل طبيعي"};
+addEventListener("online",netB);addEventListener("offline",netB);netB();
