@@ -45,3 +45,4 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{ou
 .cc .alt-box{flex-direction:row;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 8px}.cc .alt-box>b{flex:1 1 100%}.cc .alt-box a{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:1px 8px}.cc .alt-box a small{display:none}
 .alt-more summary{cursor:pointer;color:var(--accent-text);font-weight:700;padding:4px 0}.alt-more a{display:flex;justify-content:space-between;padding:2px 0}
 .dbar{top:0}
+#ab{width:100%;min-height:44px;margin:4px 0}.alt-box a[hidden]{display:none}
