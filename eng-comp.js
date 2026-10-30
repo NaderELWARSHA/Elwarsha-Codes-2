@@ -21,11 +21,9 @@ function windings(inp,opt={}){const L=inp.known?["C-R","C-S","R-S"]:["1-2","1-3"
   out.findings.push(inp.known&&common=="C"?"إذا كان للكباس أوفرلود داخلي على الطرف المشترك C فهذا النمط يتسق مع أوفرلود داخلي مفصول (غالبًا لأن الكباس ساخن). انتظر ساعة أو أكثر حتى يبرد وأعد القياس. إذا استمر: قطع في المشترك الداخلي.":`احتمال قطع في الملف المتصل بالطرف ${common}${inp.known?"":" ، أو أوفرلود داخلي مفصول إذا كان هذا الطرف هو المشترك"}.`);out.confidence="متوسطة";return out}
  if(nOpen===1){const oi=r.findIndex(x=>x===OPEN);out.status="one-open";out.findings.push(`قراءة واحدة مفتوحة (${L[oi]}) واثنتان موصلتان: نمط غير معتاد لكباس أحادي سليم (الملفان متصلان داخليًا عند المشترك). احتمالات: تلامس سيئ للمجس أثناء هذه القراءة، أو طرف مكسور/متآكل، أو قطع عند وصلة داخلية. أعد القياس أولًا.`);out.confidence="منخفضة";return out}
  /* كل القراءات موصلة */
- if(opt.phase==3){const m=(r[0]+r[1]+r[2])/3,dev=Math.max(...r.map(x=>Math.abs(x-m)/m));out.status=dev<=tol?"3ph-balanced":"3ph-unbalanced";out.mean=m;out.maxDev=dev;
-  out.findings.push(dev<=tol?`الملفات الثلاثة متزنة (أقصى انحراف ${(dev*100).toFixed(1)}% ≤ ${(tol*100).toFixed(0)}%).`:`عدم اتزان ${(dev*100).toFixed(1)}% > ${(tol*100).toFixed(0)}%: احتمال قصر بين اللفات في ملف، أو وصلة سيئة. قارن بالمرجع وأعد القياس على الأطراف مباشرة.`);
-  out.confidence=dev<=tol?"متوسطة (المقاومة وحدها لا تكفي)":"متوسطة";out.warnings.push("نسبة الاتزان المسموحة هنا معيار عام أدخلته أنت، وليست من الشركة.");return refCheck(out,r,L,opt)}
+ if(opt.phase==3)return windings3(inp,opt);
  const idx=[0,1,2].sort((i,j)=>r[i]-r[j]),[iLo,iMid,iHi]=idx,sum=r[iLo]+r[iMid],diff=r[iHi]-sum,allow=Math.max(tol*r[iHi],2*res);
- out.sumCheck={max:r[iHi],sum,diff,allow,ok:Math.abs(diff)<=allow};
+ out.sumCheck={max:r[iHi],sum,diff,allow,ok:Math.abs(diff)<=allow};out._map=inp.known?{CR:0,CS:1,RS:2}:{CR:iLo,CS:iMid,RS:iHi};out._mapSure=inp.known||Math.abs(diff)<=allow&&r[iMid]-r[iLo]>allow;
  if(r.every(x=>x<=2*res)){out.status="all-low";out.findings.push("كل القراءات قريبة من الصفر: إما قصر شديد، أو القراءات أقل من دقة جهازك (ملفات كباس كبير). استخدم جهازًا بدقة أعلى (0.01Ω) أو طريقة الأربعة أطراف، وصفّر أسلاك الجهاز.");return refCheck(out,r,L,opt)}
  if(Math.abs(r[0]-r[1])<=allow&&Math.abs(r[1]-r[2])<=allow){out.status="looks-3ph";out.findings.push("القراءات الثلاث متساوية تقريبًا: هذا نمط كباس ثلاثي الأطوار وليس أحادي. اختر «ثلاثي الأطوار» للتحليل.");return refCheck(out,r,L,opt)}
  const [a,b]=pairs[iHi],common=pairs[iLo].find(t=>pairs[iMid].includes(t));
@@ -40,12 +38,27 @@ function windings(inp,opt={}){const L=inp.known?["C-R","C-S","R-S"]:["1-2","1-3"
   out.findings.push(diff<0?"احتمالات: قصر جزئي بين اللفات في أحد الملفين، أو قصر بين الملفين، أو تلامس سيئ أثناء القياس. أعد القياس على الأطراف مباشرة بعد تنظيفها.":"احتمالات: مقاومة تلامس عالية/طرف متآكل في قراءة R-S، أو قراءة خاطئة. أعد القياس.");out.confidence="منخفضة"}
  return refCheck(out,r,L,opt)}
 /* مقارنة بقيم الموديل المرجعية (مع تصحيح الحرارة) */
-function refCheck(out,r,L,opt){const ref=opt.ref;if(!ref){out.refNote="لا توجد قيم مرجعية لهذا الموديل: لا يمكن الحكم على أن المقاومة «طبيعية». المقارنة هنا داخلية بين القراءات فقط.";return out}
- const keys=["CR","CS","RS"],tolR=isNum(opt.refTol)?opt.refTol:0.07,rows=[];
- keys.forEach((k,i)=>{const v=ref[k];if(!isNum(v)||r[i]===OPEN)return;const exp=isNum(ref.Tref)&&isNum(opt.Tm)?tempCorrect(v,ref.Tref,opt.Tm,ref.mat):v,d=(r[i]-exp)/exp;rows.push({pair:L[i],ref:v,expected:exp,measured:r[i],dev:d,ok:Math.abs(d)<=tolR})});
- out.refRows=rows;out.refNote=rows.length?`السماحية المستخدمة ±${(tolR*100).toFixed(0)}% (${isNum(opt.refTol)?"أدخلتها أنت":"قيمة افتراضية — استبدلها بسماحية الشركة إن وُجدت"})${isNum(ref.Tref)&&isNum(opt.Tm)?` بعد تصحيح الحرارة من ${ref.Tref}°C إلى ${opt.Tm}°C`:" بدون تصحيح حرارة (أدخل حرارة المرجع والقياس)"}. مصدر المرجع: ${ref.src||"غير مذكور"}.`:"القيم المرجعية لا تطابق ترتيب القراءات.";
+function refCheck(out,r,L,opt){const ref=opt.ref;out.phase=1;if(!ref){out.refNote="لا توجد قيم مرجعية لهذا الموديل: لا يمكن الحكم على أن المقاومة «طبيعية». المقارنة هنا داخلية بين القراءات فقط.";return out}
+ const keys=["CR","CS","RS"],lab={CR:"C-R",CS:"C-S",RS:"R-S"},tolR=isNum(opt.refTol)?opt.refTol:isNum(ref.tol)?ref.tol/100:0.07,rows=[],M=out._map||{CR:0,CS:1,RS:2};
+ keys.forEach(k=>{const v=ref[k],i=M[k];if(!isNum(v)||i==null||r[i]===OPEN)return;const exp=isNum(ref.Tref)&&isNum(opt.Tm)?tempCorrect(v,ref.Tref,opt.Tm,ref.mat):v,d=(r[i]-exp)/exp;rows.push({pair:lab[k]+(L[i]!==lab[k]?` (القراءة ${L[i]})`:""),ref:v,expected:exp,measured:r[i],dev:d,ok:Math.abs(d)<=tolR})});
+ out.refRows=rows;if(rows.length&&!out._mapSure)out.warnings.push("ربط القراءات بـ C-R وC-S وR-S تم بترتيب القيم لأن الأطراف غير مؤكدة — راجع تعليم الأطراف قبل الحكم.");
+ out.refNote=rows.length?`السماحية ±${(tolR*100).toFixed(0)}% (${isNum(opt.refTol)?"أدخلتها أنت":isNum(ref.tol)?"من سماحية الشركة في المرجع":"قيمة افتراضية — استبدلها بسماحية الشركة إن وُجدت"})${isNum(ref.Tref)&&isNum(opt.Tm)?` بعد تصحيح الحرارة من ${ref.Tref}°C إلى ${opt.Tm}°C`:" بدون تصحيح حرارة (أدخل حرارة المرجع والقياس)"}. مصدر المرجع: ${ref.src||"غير مذكور"}.`:"القيم المرجعية لا تطابق القراءات المتاحة.";
  if(rows.some(x=>!x.ok))out.findings.push("قراءة أو أكثر خارج سماحية المرجع: "+rows.filter(x=>!x.ok).map(x=>`${x.pair} ${x.dev>0?"+":""}${(x.dev*100).toFixed(1)}%`).join("، "));
- else if(rows.length)out.findings.push("القراءات ضمن سماحية القيم المرجعية للموديل.");return out}
+ else if(rows.length)out.findings.push("القراءات ضمن سماحية القيم المرجعية للموديل (المقاومة وحدها لا تثبت سلامة الكباس).");return out}
+/* ---- الكباس/الموتور ثلاثي الأطوار: منطق مستقل ---- */
+function windings3(inp,opt={}){const L=["U-V","U-W","V-W"],r=[reading(inp.a),reading(inp.b),reading(inp.c)];if(r.some(x=>x===null))return{err:"أدخل القراءات الثلاث (اكتب OL للقراءة المفتوحة)"};if(r.some(x=>Number.isNaN(x)))return{err:"قراءة غير صالحة"};
+ const tol=isNum(opt.tol)?opt.tol:0.05,out={phase:3,readings:r.map((v,i)=>({pair:L[i],v,txt:fmtR(v)})),findings:[],warnings:["اختبار المقاومة لا يثبت سلامة العزل (اختبر بالميجر بين كل طرف والجسم) ولا السلامة الميكانيكية.","نسبة الاتزان المسموحة هنا معيار عام تحدده أنت، وليست من الشركة ما لم تُذكر في المرجع."],confidence:"منخفضة"};
+ const op=r.map(x=>x===OPEN),n=op.filter(Boolean).length;
+ if(n===3){out.status="all-open";out.findings.push("القراءات الثلاث مفتوحة: حماية داخلية مفصولة (انتظر التبريد) أو قطع، أو أطراف/مجسات غير متصلة.");return out}
+ if(n===2){const k=r.findIndex(x=>x!==OPEN),w=["W","V","U"][k];out.status="3ph-open-phase";out.findings.push(`القراءتان المرتبطتان بالطرف ${w} مفتوحتان: قطع في الطور ${w} (أو وصلته).`);out.confidence="متوسطة";return out}
+ if(n===1){out.status="one-open";out.findings.push(`قراءة واحدة مفتوحة (${L[op.indexOf(true)]}): غير منطقي لملفات ثلاثية سليمة الوصل — أعد القياس، أو قطع في وصلة داخلية في توصيلة دلتا.`);return out}
+ const m=(r[0]+r[1]+r[2])/3,dev=Math.max(...r.map(x=>Math.abs(x-m)/m));out.mean=m;out.maxDev=dev;out.status=dev<=tol?"3ph-balanced":"3ph-unbalanced";
+ out.findings.push(dev<=tol?`الملفات الثلاثة متزنة (أقصى انحراف عن المتوسط ${(dev*100).toFixed(1)}% ≤ ${(tol*100).toFixed(0)}%).`:`عدم اتزان ${(dev*100).toFixed(1)}% > ${(tol*100).toFixed(0)}%: احتمال قصر بين اللفات في طور، أو وصلة سيئة. أعد القياس على الأطراف مباشرة.`);out.confidence="متوسطة (المقاومة وحدها لا تكفي)";
+ const ref=opt.ref;if(!ref||!isNum(ref.Rph)){out.refNote="لا توجد قيمة مرجعية للموديل: المقارنة داخلية (اتزان) فقط.";return out}
+ const tolR=isNum(opt.refTol)?opt.refTol:isNum(ref.tol)?ref.tol/100:0.07,exp=isNum(ref.Tref)&&isNum(opt.Tm)?tempCorrect(ref.Rph,ref.Tref,opt.Tm,ref.mat):ref.Rph;
+ out.refRows=r.map((v,i)=>({pair:L[i],ref:ref.Rph,expected:exp,measured:v,dev:(v-exp)/exp,ok:Math.abs((v-exp)/exp)<=tolR}));
+ out.refNote=`كل قراءة بين طرفين تُقارن بنفس القيمة المرجعية بين الأطراف (${ref.Rph} Ω) ، السماحية ±${(tolR*100).toFixed(0)}%${isNum(ref.Tref)&&isNum(opt.Tm)?` بعد تصحيح الحرارة من ${ref.Tref}°C إلى ${opt.Tm}°C`:""}. مصدر المرجع: ${ref.src||"غير مذكور"}.`;
+ if(out.refRows.some(x=>!x.ok))out.findings.push("قراءة أو أكثر خارج سماحية المرجع: "+out.refRows.filter(x=>!x.ok).map(x=>`${x.pair} ${x.dev>0?"+":""}${(x.dev*100).toFixed(1)}%`).join("، "));else out.findings.push("القراءات ضمن سماحية المرجع.");return out}
 /* ---- مقارنة توافق كباسين (تفصيلية) ---- */
 const num=v=>isNum(v)?v:(typeof v=="string"&&/^\s*\d+(\.\d+)?\s*$/.test(v)?parseFloat(v):null);
 const refN=v=>{const s=String(v??"").toUpperCase().replace(/[\s\-]/g,"");return /^R\d{2,4}[A-Z]?$/.test(s)?s:""};
@@ -82,5 +95,5 @@ function capCompare(cur,ref){if(![cur&&cur.id_mm,cur&&cur.length_m,ref&&ref.id_m
  const eq=[4.6,5.2].map(n=>ref.length_m*Math.pow(cur.id_mm/ref.id_mm,n));
  return{dD,dL,effects:eff,equivLen:{min:Math.min(...eq),max:Math.max(...eq),note:"تقدير هندسي تقريبي جدًا: طول يعطي مقاومة مماثلة بالقطر الحالي، بافتراض أن التدفق يتناسب تقريبًا مع D^2.3–2.6 ÷ L^0.5 لنفس الضغوط. ليس توصية تركيب: التوصية تحتاج بيانات الكباس وظروف التشغيل والشحنة ومبادل السحب. ثقة منخفضة."},confidence:"الاتجاه النوعي: عالية · القيمة العددية للطول المكافئ: منخفضة"}}
 function capSearch(list,q){const L=(list||[]).map(capRecord).filter(Boolean);return L.filter(r=>(!q.refrigerant||r.refrigerant.toUpperCase().replace(/[\s-]/g,"")==String(q.refrigerant).toUpperCase().replace(/[\s-]/g,""))&&(!q.application||r.application.toUpperCase().includes(String(q.application).toUpperCase()))&&(!isNum(q.id_mm)||Math.abs(r.id_mm-q.id_mm)<=0.03)&&(!q.text||(r.compModel+" "+r.brand+" "+r.model+" "+r.device).toLowerCase().includes(String(q.text).toLowerCase())))}
-const api={reading,OPEN,tempCorrect,windings,compareComps,capRecord,capCompare,capSearch,IN,refN,appN,capKcal};
+const api={reading,OPEN,tempCorrect,windings,windings3,compareComps,capRecord,capCompare,capSearch,IN,refN,appN,capKcal};
 if(typeof module!="undefined")module.exports=api;else g.EC=api})(typeof window!="undefined"?window:globalThis);

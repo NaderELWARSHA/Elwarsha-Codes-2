@@ -27,13 +27,18 @@ lamp:{t:"لمبة",terms:["a","b"],props:{P:15,Vn:220}},
 motor:{t:"موتور (حمل مكافئ)",terms:["a","b"],props:{P:100,Vn:220,pf:0.8}},
 pump:{t:"طلمبة (حمل مكافئ)",terms:["a","b"],props:{P:30,Vn:220,pf:0.8}},
 valve:{t:"صمام مياه (ملف)",terms:["a","b"],props:{R:4000}},
-compressor:{t:"كباس (C/R/S)",terms:["C","R","S"],props:{P:150,Vn:220,pf:0.75,Rrun:12,Rstart:20}},
+compressor:{t:"كباس (C/R/S)",terms:["C","R","S"],props:{P:150,Vn:220,pf:0.75,Rrun:12,Rstart:20,LRA:0,pfStart:0.6},state:{phase:"run"}},
+ptc:{t:"PTC بدء (بارد/ساخن)",terms:["a","b"],props:{Rcold:22,Rhot:20000},state:{hot:false}},
 relay:{t:"ريليه (ملف + COM/NO/NC)",terms:["c1","c2","com","no","nc"],props:{Vcoil:12,Rcoil:120,pickup:0.75,dropout:0.3}},
 timer:{t:"تايمر ديفروست",terms:["m1","m2","com","cool","defrost"],props:{Rm:8000},state:{pos:"cool"}},
 spdt:{t:"مفتاح تحويل",terms:["com","a","b"],props:{},state:{pos:"a"}}};
 const ZERO_TYPES=new Set(["switch","fuse","thermalFuse","overload","thermostat","bimetal"]);
 /* فروع كل عنصر حسب حالته: {a,b,k:"Z"|"zero"|"open"|"V",z(w)} */
-function branches(c,w,dc,eng){const p={...(T[c.type]||{}).props,...(c.props||{})},s={...(T[c.type]||{}).state,...(c.state||{})},B=[],Z=(a,b,z,tag)=>B.push({a,b,k:"Z",z,tag}),O=(a,b,tag)=>B.push({a,b,k:"open",tag}),Q=(a,b,tag)=>B.push({a,b,k:"zero",tag});
+const LOADS=new Set(["res","sensor","heater","lamp","motor","pump","valve","coil","cap","compressor","ptc"]);
+const relayOn=(c,eng)=>{const f=c.state&&c.state.force;return f=="on"?true:f=="off"?false:!!eng[c.id]};
+function branches(c,w,dc,eng){const p={...(T[c.type]||{}).props,...(c.props||{})},s={...(T[c.type]||{}).state,...(c.state||{})},B=[],Z0=(a,b,z,tag)=>B.push({a,b,k:"Z",z,tag}),O=(a,b,tag)=>B.push({a,b,k:"open",tag}),Q=(a,b,tag)=>B.push({a,b,k:"zero",tag});
+ const flt=LOADS.has(c.type)?s.fault:null,Z=(a,b,z,tag)=>flt=="open"?O(a,b,tag):flt=="short"&&(c.type!="compressor"||tag=="run")?Q(a,b,tag):Z0(a,b,z,tag);
+ if(T[c.type].src&&s.on===false){O(T[c.type].terms[0],T[c.type].terms[1],"off");return B}
  const loadZ=(P,Vn,pf)=>{const S=P/(pf||1),m=Vn*Vn/S,ph=Math.acos(Math.min(1,pf||1));return dc?C(m*(pf||1)):C(m*Math.cos(ph),m*Math.sin(ph))};
  switch(c.type){
  case"vac":case"vdc":B.push({a:T[c.type].terms[0],b:T[c.type].terms[1],k:"V",v:+p.V});break;
@@ -45,13 +50,14 @@ function branches(c,w,dc,eng){const p={...(T[c.type]||{}).props,...(c.props||{})
  case"coil":if(dc){p.R>0?Z("a","b",C(+p.R)):Q("a","b")}else Z("a","b",C(+p.R,w*p.L));break;
  case"heater":case"lamp":Z("a","b",C(p.Vn*p.Vn/p.P));break;
  case"motor":case"pump":Z("a","b",loadZ(p.P,p.Vn,p.pf));break;
- case"compressor":if(dc){Z("C","R",C(+p.Rrun),"run");Z("C","S",C(+p.Rstart),"start")}else{Z("C","R",loadZ(p.P,p.Vn,p.pf),"run");Z("C","S",C(+p.Rstart),"start")}break;
- case"relay":Z("c1","c2",C(+p.Rcoil),"coil");if(eng[c.id]){Q("com","no","no");O("com","nc","nc")}else{O("com","no","no");Q("com","nc","nc")}break;
- case"timer":Z("m1","m2",C(+p.Rm),"motor");if(s.pos=="defrost"){Q("com","defrost","defrost");O("com","cool","cool")}else{Q("com","cool","cool");O("com","defrost","defrost")}break;
+ case"compressor":if(dc){Z("C","R",C(+p.Rrun),"run");Z("C","S",C(+p.Rstart),"start")}else if(s.phase=="start"){const lr=+p.LRA>0?(()=>{const m=p.Vn/p.LRA,ph=Math.acos(Math.min(1,Math.max(0.05,+p.pfStart||0.6)));return C(m*Math.cos(ph),m*Math.sin(ph))})():C(+p.Rrun);Z("C","R",lr,"run");Z("C","S",C(+p.Rstart),"start")}else{Z("C","R",loadZ(p.P,p.Vn,p.pf),"run");Z("C","S",C(+p.Rstart),"start")}break;
+ case"ptc":Z("a","b",C(s.hot?+p.Rhot:+p.Rcold));break;
+ case"relay":(s.fault=="open"?O("c1","c2","coil"):Z0("c1","c2",C(+p.Rcoil),"coil"));if(relayOn(c,eng)){Q("com","no","no");O("com","nc","nc")}else{O("com","no","no");Q("com","nc","nc")}break;
+ case"timer":(s.fault=="open"?O("m1","m2","motor"):Z0("m1","m2",C(+p.Rm),"motor"));if(s.pos=="defrost"){Q("com","defrost","defrost");O("com","cool","cool")}else{Q("com","cool","cool");O("com","defrost","defrost")}break;
  case"spdt":if(s.pos=="b"){Q("com","b","b");O("com","a","a")}else{Q("com","a","a");O("com","b","b")}break}
  return B}
 function propErr(c){const p={...(T[c.type]||{}).props,...(c.props||{})},pos=k=>isNum(+p[k])&&+p[k]>0;
- const need={vac:["V","f"],vdc:[],res:["R"],sensor:["R"],valve:["R"],cap:["uF"],coil:["L"],heater:["P","Vn"],lamp:["P","Vn"],motor:["P","Vn","pf"],pump:["P","Vn","pf"],compressor:["P","Vn","pf","Rrun","Rstart"],relay:["Vcoil","Rcoil","pickup"],timer:["Rm"]}[c.type]||[];
+ const need={vac:["V","f"],vdc:[],res:["R"],sensor:["R"],valve:["R"],cap:["uF"],coil:["L"],heater:["P","Vn"],lamp:["P","Vn"],motor:["P","Vn","pf"],pump:["P","Vn","pf"],compressor:["P","Vn","pf","Rrun","Rstart"],relay:["Vcoil","Rcoil","pickup"],timer:["Rm"],ptc:["Rcold","Rhot"]}[c.type]||[];
  const bad=need.filter(k=>!pos(k));if(c.type=="vdc"&&!isNum(+p.V))bad.push("V");if(["motor","pump","compressor"].includes(c.type)&&+p.pf>1)bad.push("pf");if(c.type=="coil"&&!(isNum(+p.R)&&+p.R>=0))bad.push("R");return bad}
 /* ---- اتحاد-بحث ---- */
 function UF(n){const p=[...Array(n).keys()];const f=x=>{while(p[x]!==x){p[x]=p[p[x]];x=p[x]}return x};return{f,u:(a,b)=>{a=f(a);b=f(b);if(a===b)return false;p[a]=b;return true}}}
@@ -61,9 +67,10 @@ function solve(A,b){const n=b.length;for(let i=0;i<n;i++){let m=i,mv=abs(A[i][i]
  const x=Array(n);for(let i=n-1;i>=0;i--){let s=b[i];for(let c=i+1;c<n;c++)s=sub(s,mul(A[i][c],x[c]));x[i]=div(s,A[i][i])}return x}
 /* ---- فحص بنية الدائرة ---- */
 function normalize(ckt){const comps=(ckt&&Array.isArray(ckt.comps)?ckt.comps:[]).filter(c=>c&&T[c.type]&&typeof c.id=="string").slice(0,300),ids=new Set(comps.map(c=>c.id));
- const wires=(ckt&&Array.isArray(ckt.wires)?ckt.wires:[]).filter(w=>w&&w.a&&w.b&&ids.has(w.a.c)&&ids.has(w.b.c)).filter(w=>{const ca=comps.find(c=>c.id==w.a.c),cb=comps.find(c=>c.id==w.b.c);return T[ca.type].terms.includes(w.a.t)&&T[cb.type].terms.includes(w.b.t)}).slice(0,1000);return{comps,wires}}
+ const wires=(ckt&&Array.isArray(ckt.wires)?ckt.wires:[]).filter(w=>w&&!w.broken&&w.a&&w.b&&ids.has(w.a.c)&&ids.has(w.b.c)).filter(w=>{const ca=comps.find(c=>c.id==w.a.c),cb=comps.find(c=>c.id==w.b.c);return T[ca.type].terms.includes(w.a.t)&&T[cb.type].terms.includes(w.b.t)}).slice(0,1000);return{comps,wires}}
 /* ---- التحليل الكامل لحالة واحدة ---- */
-function analyze(ckt,opt={}){const {comps,wires}=normalize(ckt),iss=[],add=(lvl,code,msg,ids=[])=>iss.push({lvl,code,msg,comps:ids});
+function analyze(ckt,opt={}){const r0=analyze0(ckt,opt);r0.issues.forEach(i=>{if(!i.fix&&FIX[i.code])i.fix=FIX[i.code](i,normalize(ckt).comps)});return r0}
+function analyze0(ckt,opt={}){const {comps,wires}=normalize(ckt),iss=[],add=(lvl,code,msg,ids=[])=>iss.push({lvl,code,msg,comps:ids});
  const res={issues:iss,comps:{},wires:{},mode:"topology",scope:""};if(!comps.length){add("info","EMPTY","الدائرة فارغة");return res}
  const srcs=comps.filter(c=>T[c.type].src);if(!srcs.length)add("error","NO_SOURCE","لا يوجد مصدر جهد في الدائرة");
  const kinds=new Set(srcs.map(c=>c.type));if(kinds.size>1){add("error","MIXED","مصدر متردد ومستمر في نفس الدائرة: غير مدعوم في هذا المحرك");return res}
@@ -82,12 +89,14 @@ function analyze(ckt,opt={}){const {comps,wires}=normalize(ckt),iss=[],add=(lvl,
  let eng={};comps.filter(c=>c.type=="relay").forEach(c=>eng[c.id]=!!(c.state&&c.state.energized));const seen=new Set();let sol=null,BR=null,it=0,unstable=false;
  for(;it<25;it++){BR=[];comps.forEach(c=>branches(c,w,dc,eng).forEach(b=>BR.push({...b,c:c.id,na:node(tKey(c.id,b.a)),nb:node(tKey(c.id,b.b))})));
   sol=solveNet(BR,nN,gndNode,dc,iss,comps);if(!sol)break;const next={};let ch=false;
-  comps.filter(c=>c.type=="relay").forEach(c=>{const p={...T.relay.props,...c.props},br=BR.find(b=>b.c==c.id&&b.tag=="coil"),v=abs(sub(sol.V[br.na],sol.V[br.nb]));next[c.id]=eng[c.id]?v>=p.dropout*p.Vcoil:v>=p.pickup*p.Vcoil;if(next[c.id]!==eng[c.id])ch=true});
+  comps.filter(c=>c.type=="relay").forEach(c=>{const p={...T.relay.props,...c.props},br=BR.find(b=>b.c==c.id&&b.tag=="coil"),v=br.k=="Z"?abs(sub(sol.V[br.na],sol.V[br.nb])):0;next[c.id]=c.state&&c.state.force&&c.state.force!="auto"?c.state.force=="on":eng[c.id]?v>=p.dropout*p.Vcoil:v>=p.pickup*p.Vcoil;if(next[c.id]!==eng[c.id])ch=true});
   if(!ch)break;const key=JSON.stringify(next);if(seen.has(key)){unstable=true;break}seen.add(key);eng=next}
  if(unstable)add("error","RELAY_OSC","حالة غير مستقرة: ريليه يفصل ويوصل نفسه باستمرار (اهتزاز)",Object.keys(eng));
  if(!sol)return res;
  res.mode=dc?"dc":"ac";res.scope=dc?"DC بحالة مستقرة: المكثفات مفتوحة، الملفات = مقاومتها":"AC جيبي بحالة مستقرة (Phasors) بتردد "+(w/2/Math.PI)+" Hz. الموتورات والكباسات = حمل مكافئ عند التشغيل المقنن (لا بدء ولا عزم). القيم تقريبية لهذه العناصر.";
- res.relays=eng;
+ res.relays={};comps.filter(c=>c.type=="relay").forEach(c=>res.relays[c.id]=relayOn(c,eng));
+ srcs.filter(c=>c.state&&c.state.on===false).forEach(c=>add("info","SRC_OFF",`${label(c)} مفصول (التغذية متوقفة)`,[c.id]));
+ res.models={};comps.forEach(c=>{const m=MODEL(c);if(m)res.models[c.id]=m});
  /* نتائج العناصر */
  const eps=1e-6;BR.forEach(b=>{const r=res.comps[b.c]||(res.comps[b.c]={I:0,V:0,P:0,parts:[]});let I=[0,0],V=sub(sol.V[b.na],sol.V[b.nb]);
   if(b.k=="Z")I=div(V,b.z);else if(b.k=="V"||b.k=="zero")I=b.idx!=null?sol.I[b.idx]:null;
@@ -113,7 +122,25 @@ function analyze(ckt,opt={}){const {comps,wires}=normalize(ckt),iss=[],add=(lvl,
  const netAct=new Map();activeT.forEach(k=>{const n=node(k);netAct.set(n,(netAct.get(n)||0)+1)});
  comps.filter(c=>c.type=="junction").forEach(c=>{const k=tKey(c.id,"n");if((netAct.get(node(k))||0)>=2)activeT.add(k)});
  wires.forEach(x=>{res.wires[x.id]={on:activeT.has(tKey(x.a.c,x.a.t))&&activeT.has(tKey(x.b.c,x.b.t))}});
- res.nets=nN;res.iterations=it+1;return res}
+ res.trace={BR:BR.map(b=>({c:b.c,a:b.a,b:b.b,na:b.na,nb:b.nb,k:b.k,tag:b.tag||"",I:b.k=="Z"?abs(div(sub(sol.V[b.na],sol.V[b.nb]),b.z)):(b.idx!=null?abs(sol.I[b.idx]):(b.loop?null:0)),V:abs(sub(sol.V[b.na],sol.V[b.nb]))}))};
+ iss.forEach(i=>{if(FIX[i.code])i.fix=FIX[i.code](i,comps)});res.nets=nN;res.iterations=it+1;return res}
+const nm=(cs,id)=>label(cs.find(c=>c.id==id));
+const FIX={SRC_SHORT:()=>"افصل السلك أو المفتاح الذي يوصل طرفي المصدر مباشرة. لازم يكون في المسار حمل (لمبة/سخان/ملف) يحد التيار، والفيوز في الحقيقة سيحترق.",
+ SRC_PARALLEL:()=>"لا توصل مصدرين على التوازي. احذف أحدهما أو افصل التوصيل بينهما.",LOW_Z:()=>"مقاومة الحمل صغيرة جدًا: راجع قيمة المقاومة أو ابحث عن قصر جزئي في الحمل.",
+ SHORTED:(i,cs)=>`ابحث عن سلك أو مفتاح مغلق موصل بين طرفي ${nm(cs,i.comps[0])} واحذفه — العنصر المقصور لا يعمل والتيار يمر حوله.`,
+ OPEN_PATH:(i,cs)=>i.comps.length>1?`أغلق ${i.comps.slice(1).map(id=>nm(cs,id)).join(" و")} إن كان ذلك مقصودًا، أو افحصه إن كان المفروض أن يكون مغلقًا (مفتاح مفتوح / فيوز محروق / أوفرلود فاصل).`:"تتبع المسار من المصدر حتى الحمل.",
+ NO_PATH:(i,cs)=>`وصّل طرفي ${nm(cs,i.comps[0])} بحيث يكون أحدهما ناحية الفاز (+) والآخر ناحية النيوترال (−) عبر باقي الدائرة.`,
+ OPEN_TERM:(i,cs)=>`أضف سلكًا لكل طرف حر (النقطة البرتقالية) في ${nm(cs,i.comps[0])}، أو احذف العنصر إن لم يكن مطلوبًا.`,UNCONNECTED:()=>"وصّل العنصر بالدائرة أو احذفه.",
+ NO_SOURCE:()=>"أضف مصدر AC أو DC من المكتبة ووصّله.",MIXED:()=>"استخدم نوع مصدر واحد في الدائرة.",FUSE_OVER:()=>"الحمل يسحب تيارًا أكبر من الفيوز: راجع الحمل أو استخدم فيوز بتقنين صحيح حسب التصميم.",
+ OL_OVER:()=>"تيار أعلى من تيار فصل الأوفرلود: في الحقيقة سيفصل بعد زمن. ابحث عن سبب التيار العالي (بدء لا يكتمل، جهد منخفض، حمل ميكانيكي).",
+ RELAY_OSC:()=>"ملف الريليه يتغذى عبر نقطة NC الخاصة به فيفصل نفسه: غيّر التوصيل (ملف الريليه لا يجب أن يمر عبر تلامسه المغلق عاديًا).",
+ UNINTENDED:(i,cs)=>`ابحث عن مسار جانبي يغذي ${nm(cs,i.comps[0])} دون المرور بعنصر التحكم الخاص به.`,NOT_RUNNING:(i,cs)=>`اتبع رسائل «المسار مقطوع» لمعرفة سبب توقف ${nm(cs,i.comps[0])}.`,
+ BAD_PROP:()=>"صحح قيمة الخاصية من لوحة الخصائص (أرقام موجبة).",SRC_OFF:()=>"شغّل التغذية من زر ⏻ أو من خصائص المصدر."};
+const MODEL=c=>{const p={...(T[c.type]||{}).props,...(c.props||{})},s={...(T[c.type]||{}).state,...(c.state||{})};
+ if(c.type=="compressor")return s.phase=="start"?(+p.LRA>0?`لحظة البدء (العضو الدوار واقف): ملف التشغيل = ${p.Vn} V ÷ LRA ${p.LRA} A بزاوية افتراضية PF ${p.pfStart} — قيمة LRA من لوحة الكباس. لا يحاكي تسارع الدوران ولا زمن البدء.`:"لحظة البدء بدون LRA: ملف التشغيل ممثل بمقاومته المستمرة فقط — التيار المحسوب أعلى من الحقيقي. أدخل LRA من لوحة الكباس."):`تشغيل مستقر: ملف التشغيل = حمل مكافئ من القدرة ${p.P} W ومعامل القدرة ${p.pf}، وملف البدء = مقاومته ${p.Rstart} Ω. ليس نموذجًا كاملًا للكباس (لا عزم ولا انزلاق ولا ضغوط).`;
+ if(c.type=="motor"||c.type=="pump")return`حمل مكافئ عند التشغيل المقنن (${p.P} W، PF ${p.pf}). لا يحاكي البدء ولا السرعة ولا الحمل الميكانيكي.`;
+ if(c.type=="ptc")return`حالتان ثابتتان: بارد ${p.Rcold} Ω (لحظة البدء) وساخن ${p.Rhot} Ω (بعد ثوانٍ). التسخين الذاتي وزمن التحول غير محاكيين — غيّر الحالة يدويًا.`;
+ if(c.type=="lamp")return"مقاومة ثابتة محسوبة من القدرة المقننة (فتيل اللمبة على البارد مقاومته أقل بكثير).";if(c.type=="heater")return"مقاومة ثابتة = V² ÷ P.";return""};
 const label=c=>c?((c.name||T[c.type].t)+(c.name?"":" "+c.id)):"?";
 function solveNet(BR,nN,gndNode,dc,iss,comps){/* فحص حلقات المصادر والعناصر الصفرية */
  const z=UF(nN);BR.forEach(b=>{delete b.loop;delete b.idx});for(const b of BR.filter(b=>b.k=="zero"))if(!z.u(b.na,b.nb))b.loop=true;
@@ -134,13 +161,43 @@ function openWhy(c,BR,nN,comps,node,tKey){const own=BR.filter(b=>b.c==c.id),othe
  for(const ob of own)for(const s of srcB){for(const [x,y] of [[ob.na,ob.nb],[ob.nb,ob.na]]){if(x===y)continue;const p1=path(s.na,x,y),p2=p1&&path(y,s.nb,x);if(p1&&p2){const bl=[...new Set(p1.concat(p2).filter(b=>b.k=="open").map(b=>b.c))];return{blocking:bl,reach:true}}}}
  return{blocking:[],reach:false}}
 /* ---- سيناريو زمني: تتابع حالات ---- */
-function scenario(ckt,steps,opt){return(steps||[]).slice(0,20).map(st=>{const c2=JSON.parse(JSON.stringify(ckt));(st.set||[]).forEach(s=>{const c=c2.comps.find(x=>x.id==s.id);if(c){if(s.state)c.state={...(c.state||{}),...s.state};if(s.expect!==undefined)c.expect=s.expect}});return{name:st.name,note:st.note||"",result:analyze(c2,opt)}})}
+function scenario(ckt,steps,opt){const c2=JSON.parse(JSON.stringify(ckt));return(steps||[]).slice(0,20).map(st=>{(st.set||[]).forEach(x=>{const c=c2.comps.find(y=>y.id==x.id);if(c){if(x.state)c.state={...(c.state||{}),...x.state};if(x.expect!==undefined)c.expect=x.expect}});(st.wires||[]).forEach(x=>{const w=c2.wires.find(y=>y.id==x.id);if(w)w.broken=!!x.broken});
+ const r=analyze(c2,opt);Object.entries(r.relays||{}).forEach(([id,on])=>{const c=c2.comps.find(y=>y.id==id);c.state={...(c.state||{}),energized:on}});return{name:st.name,note:st.note||"",result:r}})}
 /* ---- تحقق من ملف دائرة (استيراد/حفظ) ---- */
 function validateCircuit(o){const e=[];if(!o||typeof o!="object")return["ليس ملف دائرة"];if(!Array.isArray(o.comps))e.push("comps مطلوبة");if(!Array.isArray(o.wires))e.push("wires مطلوبة");if(e.length)return e;
  const ids=new Set();o.comps.forEach((c,i)=>{if(!c||!T[c.type])e.push(`عنصر ${i+1}: نوع غير معروف`);else if(typeof c.id!="string"||!/^[\w-]{1,30}$/.test(c.id))e.push(`عنصر ${i+1}: معرف غير صالح`);else if(ids.has(c.id))e.push(`معرف مكرر ${c.id}`);else ids.add(c.id)});
  o.wires.forEach((w,i)=>{if(!w||!w.a||!w.b||!ids.has(w.a.c)||!ids.has(w.b.c))e.push(`سلك ${i+1}: طرف غير موجود`)});if(o.comps.length>300)e.push("أكثر من 300 عنصر");return e}
-function cleanCircuit(o){const ck=x=>x&&typeof x=="object"&&!Array.isArray(x);return{id:String(o.id||"").replace(/[^\w-]/g,"").slice(0,40)||("ckt"+Date.now().toString(36)),name:String(o.name||"دائرة").slice(0,100),note:String(o.note||"").slice(0,600),edu:!!o.edu,
+const META=["desc","how","expected"],txt=(v,n=3000)=>String(v||"").slice(0,n);
+function cleanCircuit(o){const ck=x=>x&&typeof x=="object"&&!Array.isArray(x);return{id:String(o.id||"").replace(/[^\w-]/g,"").slice(0,40)||("ckt"+Date.now().toString(36)),name:String(o.name||"دائرة").slice(0,100),note:String(o.note||"").slice(0,600),
+ desc:txt(o.desc),how:txt(o.how),expected:txt(o.expected),published:o.published!==false,roles:ck(o.roles)?Object.fromEntries(Object.entries(o.roles).map(([k,v])=>[String(k).slice(0,30),txt(v,400)])):{},tests:Array.isArray(o.tests)?o.tests.map(x=>txt(x,400)).filter(Boolean).slice(0,30):[],
+ faults:Array.isArray(o.faults)?o.faults.filter(ck).slice(0,20).map(f=>({name:txt(f.name,120),id:String(f.id||"").slice(0,30),state:ck(f.state)?f.state:{},...(Array.isArray(f.also)?{also:f.also.filter(x=>ck(x)&&ck(x.state)).slice(0,5).map(x=>({id:String(x.id).slice(0,30),state:x.state}))}:{}),expect:txt(f.expect,400)})):[],edu:!!o.edu,
  comps:o.comps.map(c=>({id:c.id,type:c.type,name:String(c.name||"").slice(0,40),x:+c.x||0,y:+c.y||0,rot:[0,90,180,270].includes(+c.rot)?+c.rot:0,props:ck(c.props)?Object.fromEntries(Object.entries(c.props).filter(([k,v])=>k in T[c.type].props&&isNum(+v)).map(([k,v])=>[k,+v])):{},state:ck(c.state)?{...c.state}:undefined,expect:["on","off"].includes(c.expect)?c.expect:undefined})),
- wires:o.wires.map((w,i)=>({id:String(w.id||"w"+i).slice(0,30),a:{c:w.a.c,t:String(w.a.t)},b:{c:w.b.c,t:String(w.b.t)}})),steps:Array.isArray(o.steps)?o.steps.slice(0,20):undefined}}
-const api={TYPES:T,ZERO_TYPES,branches,analyze,scenario,validateCircuit,cleanCircuit,label,_c:{C,add,sub,mul,div,abs}};
+ wires:o.wires.map((w,i)=>({id:String(w.id||"w"+i).slice(0,30),a:{c:w.a.c,t:String(w.a.t)},b:{c:w.b.c,t:String(w.b.t)},...(w.broken?{broken:true}:{}),...(w.short?{short:true}:{})})),steps:Array.isArray(o.steps)?o.steps.slice(0,20):undefined}}
+/* ---- «اشرح لي الدائرة»: مسارات التيار من المصدر وحتى العودة ---- */
+const STW=(c)=>{const s={...(T[c.type].state||{}),...(c.state||{})};if("closed" in s)return s.closed?"مغلق":"مفتوح";if("blown" in s)return s.blown?"محروق":"سليم";if("tripped" in s)return s.tripped?"فاصل":"مغلق";if(c.type=="timer")return s.pos=="defrost"?"على الديفروست":"على التبريد";if(c.type=="spdt")return"على الوضع "+(s.pos||"a");if(c.type=="ptc")return s.hot?"ساخن":"بارد";return""};
+const fI=I=>I>=1?I.toFixed(2)+" A":I>=1e-3?(I*1000).toFixed(1)+" mA":(I*1e6).toFixed(0)+" µA";
+function explain(ckt,res){const {comps}=normalize(ckt),L=[],tr=res&&res.trace;if(!tr)return(res&&res.issues||[]).filter(i=>i.lvl=="error").map(i=>"⚠️ "+i.msg+(i.fix?" — "+i.fix:"")).concat(["لا يمكن شرح المسار قبل حل المشكلات أعلاه."]);
+ const eps=1e-6,cb=id=>comps.find(c=>c.id==id),BR=tr.BR,act=BR.filter(b=>b.k!="V"&&(b.I===null||b.I>eps)),srcB=BR.filter(b=>b.k=="V");
+ const adj=new Map();act.forEach(b=>{[[b.na,b.nb],[b.nb,b.na]].forEach(([x,y])=>{if(!adj.has(x))adj.set(x,[]);adj.get(x).push([y,b])})});
+ const path=(s,t,ban)=>{if(s===t)return[];const prev=new Map([[s,null]]),q=[s];while(q.length){const u=q.shift();if(u===t)break;for(const [v,b] of adj.get(u)||[])if(v!==ban&&!prev.has(v)){prev.set(v,[u,b]);q.push(v)}}if(!prev.has(t))return null;const el=[];let v=t;while(prev.get(v)){const [u,b]=prev.get(v);el.unshift(b);v=u}return el};
+ const nmB=b=>{const c=cb(b.c),st=STW(c);return`${c.name||T[c.type].t+" "+c.id}${b.tag&&!["no","nc","cool","defrost","a","b"].includes(b.tag)?" ("+({run:"ملف التشغيل",start:"ملف البدء",coil:"الملف",motor:"الموتور"}[b.tag]||b.tag)+")":""}${st?" ["+st+"]":""}`};
+ const loads=act.filter(b=>b.k=="Z"),seen=new Set();srcB.forEach(sb=>{const sc=cb(sb.c),t0=T[sc.type].terms;
+  loads.forEach(lb=>{for(const [x,y] of [[lb.na,lb.nb],[lb.nb,lb.na]]){const p1=path(sb.na,x,y),p2=p1&&path(y,sb.nb,x);if(p1&&p2){const seq=p1.concat([lb]).concat(p2),key=seq.map(b=>b.c+b.tag).join(">");if(seen.has(key))return;seen.add(key);
+   const lc=cb(lb.c);L.push(`• ${lc.name||T[lc.type].t}: التيار يخرج من ${sc.name||T[sc.type].t} (الطرف ${t0[0]}) ← ${seq.map(b=>b===lb?"«"+nmB(b)+" — يعمل: "+fI(lb.I)+"، "+lb.V.toFixed(1)+" V»":nmB(b)).join(" ← ")} ← يرجع إلى الطرف ${t0[1]}.`);return}}})});
+ comps.filter(c=>c.type=="relay").forEach(c=>{const on=res.relays&&res.relays[c.id],f=c.state&&c.state.force;L.push(`• ${c.name||"ريليه "+c.id}: ${f&&f!="auto"?"مثبت يدويًا على ":""}${on?"الملف مغذى → نقطة COM انتقلت إلى NO":"الملف غير مغذى → COM على NC"}.`)});
+ const off=res.issues.filter(i=>["OPEN_PATH","NO_PATH","SHORTED"].includes(i.code));if(off.length)L.push("الأحمال المتوقفة:",...off.map(i=>"• "+i.msg));
+ if(!L.length)L.push("لا يمر تيار في أي حمل حاليًا.");const md=Object.entries(res.models||{});if(md.length)L.push("النماذج المستخدمة:",...md.map(([id,m])=>`• ${(cb(id)||{}).name||id}: ${m}`));return L}
+/* ---- «علمني اختبارها»: نقاط القياس والقراءات المتوقعة ---- */
+function teach(ckt,res){const {comps}=normalize(ckt),A=[],B=[],Cc=[],nmC=c=>c.name||T[c.type].t+" "+c.id,f=v=>+(+v).toPrecision(4);
+ comps.forEach(c=>{const p={...(T[c.type].props||{}),...(c.props||{})},s={...(T[c.type].state||{}),...(c.state||{})},n=nmC(c);let r=null;
+  switch(c.type){case"res":case"sensor":case"valve":r=`${f(p.R)} Ω`;break;case"heater":r=`≈ ${f(p.Vn*p.Vn/p.P)} Ω (= V² ÷ P)`;break;case"lamp":r=`أقل من ${f(p.Vn*p.Vn/p.P)} Ω (الفتيل على البارد أقل بكثير؛ الليد لا يُقاس هكذا)`;break;case"coil":r=`${f(p.R)} Ω`;break;
+   case"motor":case"pump":r="حسب مرجع الموتور (النموذج هنا حمل مكافئ ولا يحدد مقاومة الملف) — المهم: ليست 0 وليست OL";break;case"compressor":r=`C-R ≈ ${f(p.Rrun)} Ω ، C-S ≈ ${f(p.Rstart)} Ω ، R-S ≈ ${f(+p.Rrun+ +p.Rstart)} Ω (قيم الدائرة)`;break;
+   case"relay":r=`ملف الريليه ${f(p.Rcoil)} Ω ، COM-NC ≈ 0 Ω و COM-NO = OL (بدون تغذية)`;break;case"timer":r=`موتور التايمر ${f(p.Rm)} Ω ، COM مع ${s.pos=="defrost"?"الديفروست":"التبريد"} ≈ 0 Ω والآخر OL`;break;case"ptc":r=`${f(p.Rcold)} Ω على البارد (انتظر أن يبرد)`;break;case"cap":r="قس السعة µF بوضع السعة بعد التفريغ — لا تقِس مقاومة";break;
+   case"switch":case"thermostat":case"bimetal":r=s.closed?"≈ 0 Ω (مغلق)":"OL (مفتوح)";break;case"fuse":case"thermalFuse":r=s.blown?"OL (محروق)":"≈ 0 Ω (سليم)";break;case"overload":r=s.tripped?"OL (فاصل)":"≈ 0 Ω (مغلق وهو بارد)";break}
+  if(r)A.push(`• ${n}: افصل أحد طرفيه عن الدائرة ثم قس ${r}${s.fault?` — العنصر هنا مضبوط على عطل «${s.fault=="open"?"مفتوح":"قصر"}» فستكون القراءة ${s.fault=="open"?"OL":"≈ 0 Ω"}`:""}.`)});
+ if(res&&res.comps)comps.forEach(c=>{if(["junction","gnd"].includes(c.type)||T[c.type].src)return;const r=res.comps[c.id];if(!r)return;const n=nmC(c);
+  if(ZERO_TYPES.has(c.type))B.push(`• على ${n}: ${r.V>1?f(r.V)+" V ← العنصر مفتوح وهو الذي يقطع المسار":"≈ 0 V ← مغلق/سليم (لا يوجد هبوط عليه)"}.`);else if(c.type!="spdt")B.push(`• على طرفي ${n}: ≈ ${f(r.V)} V${r.I>1e-6?` ، والتيار بالكلامب ≈ ${fI(r.I)}`:" (لا يعمل)"}.`)});
+ Cc.push("قاعدة سريعة: مع وجود التغذية، جهد كامل على عنصر تحكم أو حماية في المسار = هو المفتوح. وجهد صفر على حمل لا يعمل = المشكلة قبله في المسار.");
+ return{off:A,on:B,tips:Cc,warn:"القياس على الجهد خطر: مجسات معزولة، يد واحدة، وجهاز بفئة أمان مناسبة. القراءات المتوقعة هنا من قيم الدائرة التعليمية، والقيم الحقيقية من مرجع كل جهاز."}}
+const api={TYPES:T,ZERO_TYPES,LOADS,branches,analyze,scenario,validateCircuit,cleanCircuit,label,explain,teach,FIX,MODEL,_c:{C,add,sub,mul,div,abs}};
 if(typeof module!="undefined")module.exports=api;else g.ECK=api})(typeof window!="undefined"?window:globalThis);

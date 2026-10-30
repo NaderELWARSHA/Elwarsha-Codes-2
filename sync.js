@@ -28,7 +28,7 @@ const brand=T(raw.brand,100)||"إضافات يدوية",k=compKey(brand,rec.mode
 return{acc,dup,err,next:custom.concat(acc)}}
 const parseComps=j=>Array.isArray(j)?j:Array.isArray(j&&j.customCompressors)?j.customCompressors:null;
 const exportComps=l=>({customCompressors:l,_meta:{exportedAt:now(),app:"المرجع الفني — أكواد الكباسات",kind:"compressor-custom-only"}});
-function makeBackup(D,x={}){return{app:"mw-ref",schema:3,attachments:x.attachments||[],created:now(),faults:D.faults,custom:D.custom,favorites:x.favorites||[],history:x.history||[],lists:x.lists?cleanLists(x.lists):undefined}}
+function makeBackup(D,x={}){return{app:"mw-ref",schema:3,attachments:x.attachments||[],created:now(),faults:D.faults,custom:D.custom,favorites:x.favorites||[],history:x.history||[],lists:x.lists?cleanLists(x.lists):undefined,kit:x.kit&&typeof x.kit=="object"?x.kit:undefined}}
 const ATYPES=["image/jpeg","image/png","image/webp"];
 function cleanAtt(a){if(!isObj(a)||!okId(a.id)||!ATYPES.includes(a.type)||typeof a.data!="string"||a.data.length>6e6||!/^[A-Za-z0-9+/=]+$/.test(a.data))return null;return{id:a.id,type:a.type,name:T(a.name,120),desc:T(a.desc,300),hash:T(a.hash,80),data:a.data}}
 function validateBackup(o){if(!isObj(o)||o.app!=="mw-ref")return{ok:false,reason:"الملف ليس نسخة من هذا التطبيق"};if(o.schema!==2&&o.schema!==3)return{ok:false,reason:"إصدار المخطط غير متوافق: "+o.schema};

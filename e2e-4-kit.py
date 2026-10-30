@@ -18,8 +18,8 @@ with sync_playwright() as p:
     pg.click('[data-kc="all"]')
     # ---- units
     pg.goto(U+'#/kit/units'); pg.wait_for_timeout(300); pg.fill('#uv','١٢٠٠٠'); pg.select_option('#uu','BTU/h'); pg.wait_for_timeout(200); t=pg.inner_text('#uo'); ok('units: Arabic digits 12000 BTU/h = 3516.85 W = 1 TR',('3516.85' in t) and ('\n1\n' in t or '\t1\n' in t or 'TR\t1' in t))
-    ok('result actions visible after valid input',pg.locator('#ra').is_visible())
-    pg.fill('#uv',''); pg.wait_for_timeout(150); ok('no misleading result when input empty',pg.locator('#uo .pend').count()==1 and not pg.locator('#ra').is_visible())
+    ok('result actions enabled after valid input',pg.locator('#rcp').is_enabled())
+    pg.fill('#uv',''); pg.wait_for_timeout(150); ok('no misleading result when input empty',pg.locator('#uo .pend').count()==1 and pg.locator('#rcp').is_disabled())
     pg.goto(U+'#/kit/achp'); pg.wait_for_timeout(300); pg.select_option('#ahp','1.5'); pg.wait_for_timeout(150); ok('commercial AC HP 1.5 -> 12000 BTU/h, separate from mechanical HP',('12000 BTU/h' in pg.inner_text('#ao')) and ('≠' in pg.inner_text('#ao')))
     # ---- refrigeration
     pg.goto(U+'#/kit/pt'); pg.wait_for_timeout(300); pg.select_option('#rf','R134a'); pg.select_option('#pmode','t'); pg.fill('#pt','0'); pg.select_option('#pg2','abs'); pg.select_option('#pu2','kPa'); pg.wait_for_timeout(200); ok('PT: R134a 0°C = 292.8 kPa abs',('292.8' in pg.inner_text('#po')))
@@ -43,46 +43,47 @@ with sync_playwright() as p:
     pg.goto(U+'#/kit/components/cap'); pg.wait_for_timeout(300); ok('component detail has 6 sections + warning',pg.locator('section.sec').count()==6 and pg.locator('.notice').count()>=1)
     pg.goto(U+'#/kit/kit-washer'); pg.wait_for_timeout(300); ok('washer kit 14 tests + design note',pg.locator('.rc').count()==14 and 'لا توجد مقاومة' in pg.inner_text('.notice'))
     # ---- diagnosis
-    pg.goto(U+'#/kit/diag'); pg.wait_for_timeout(300); ok('diagnosis lists 6 builtin trees',pg.locator('.rc').count()>=6)
+    pg.goto(U+'#/kit/diag'); pg.wait_for_timeout(300); ok('diagnosis lists 8 builtin trees',pg.locator('.rc').count()>=8)
     pg.goto(U+'#/kit/diag/fridge-no-cool'); pg.wait_for_timeout(300); pg.locator('[data-do]').nth(1).click(); pg.wait_for_timeout(200); pg.locator('[data-do]').nth(0).click(); pg.wait_for_timeout(200)
     ok('diagnosis navigates with measurement + tool link',('الخطوة 3' in pg.inner_text('.hero')) and pg.locator('a[href="#/kit/comp-wind"]').count()>=1)
     pg.click('#rcp'); pg.wait_for_timeout(150); clip=pg.evaluate("navigator.clipboard.readText()"); ok('diagnosis report copies answers',('الإجابة' in clip) and ('تقدير هندسي' in clip))
     # ---- circuit simulator
-    pg.goto(U+'#/kit/circuit/ckt-lamp'); pg.wait_for_timeout(500); t=pg.inner_text('#ckres'); ok('simulator: template lamp runs with 1.00 A',('1.00 A' in t))
-    ok('simulator: current path highlighted',pg.locator('#cks .wire.on').count()==4 and pg.locator('#cks .comp.on').count()>=3)
-    pg.locator('#cks [data-c="S1"]').click(); pg.wait_for_timeout(250); t=pg.inner_text('#ckres'); ok('simulator: tap switch toggles -> open path detected',('مقطوع' in t) and pg.locator('#cks .wire.on').count()==0)
+    pg.goto(U+'#/kit/circuit/ckt-lamp'); pg.wait_for_timeout(500); pg.click('[data-tab="res"]'); pg.wait_for_timeout(150); ok('simulator: template lamp runs with 1.00 A',('1.00 A' in pg.inner_text('#ckpanel')))
+    ok('simulator: current path highlighted',pg.locator('#cks .wire.on').count()>=4 and pg.locator('#cks .comp.on').count()>=3)
+    pg.locator('#cks [data-c="S1"]').click(); pg.wait_for_timeout(250); pg.click('[data-tab="err"]'); pg.wait_for_timeout(150); ok('simulator: tap switch toggles -> open path detected with fix',('مقطوع' in pg.inner_text('#ckpanel')) and ('الإصلاح' in pg.inner_text('#ckpanel')) and pg.locator('#cks .wire.on').count()==0)
     pg.locator('#cks [data-c="S1"]').click(); pg.wait_for_timeout(200)
-    pg.click('#cksim'); pg.click('[data-add="lamp"]'); pg.wait_for_timeout(200); ok('palette adds component + props panel',pg.locator('#cks [data-c="LP1"]').count()==1 and pg.locator('#ckprops input[data-pp="P"]').count()==1)
+    nw0=pg.evaluate("JSON.parse(sessionStorage.mw_ck_cur).ck.wires.length")
+    pg.click('#cksim'); pg.click('[data-tab="lib"]'); pg.click('[data-add="lamp"]'); pg.wait_for_timeout(200); ok('palette adds component + props panel',pg.locator('#cks [data-c="LP1"]').count()==1 and pg.locator('#ckpanel input[data-pp="P"]').count()==1)
     pg.click('[data-md="wire"]'); pg.wait_for_timeout(100)
     def tap(k):
         box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
-    tap('LP1|a'); tap('V1|+'); ok('wire mode creates wire by tapping two terminals',pg.evaluate("JSON.parse(sessionStorage.mw_ck_cur).wires.length")==5)
-    pg.click('#cksim'); pg.wait_for_timeout(250); ok('simulator warns missing connection point',('نقطة توصيل مفقودة' in pg.inner_text('#ckres')))
-    pg.goto(U+'#/kit/circuit/ckt-nofrost'); pg.wait_for_timeout(500); pg.click('#strun'); pg.wait_for_timeout(300); ok('no-frost scenario: 4 states all as expected',pg.locator('#stout .flag.ok').count()==4)
+    tap('LP1|a'); tap('S1|b'); ok('wire mode creates wire by tapping two terminals',pg.evaluate("JSON.parse(sessionStorage.mw_ck_cur).ck.wires.length")==nw0+1)
+    pg.click('#cksim'); pg.wait_for_timeout(250); pg.click('[data-tab="err"]'); ok('simulator warns missing connection point',('نقطة توصيل مفقودة' in pg.inner_text('#ckpanel')))
+    pg.goto(U+'#/kit/circuit/ckt-nofrost'); pg.wait_for_timeout(500); pg.click('[data-tab="res"]'); pg.click('#strun'); pg.wait_for_timeout(300); ok('no-frost scenario: 4 states all as expected',pg.locator('#stout .flag.ok').count()==4)
     pg.locator('[data-st="1"]').click(); pg.wait_for_timeout(250); ok('no-frost defrost state: heater on, compressor off',pg.locator('#cks .comp.on[data-c="HT"]').count()==1 and pg.locator('#cks .comp.on[data-c="CMP"]').count()==0)
-    pg.goto(U+'#/kit/circuit/ckt-lamp'); pg.wait_for_timeout(400); pg.click('#cksave'); pg.wait_for_timeout(400); ok('save circuit to library',len(pg.evaluate("JSON.parse(localStorage.mw_lib).circuits"))==1)
-    # ---- library admin + quality
-    pg.goto(U+'#/kit/libadmin/capillary'); pg.wait_for_timeout(300)
-    pg.fill('#je',json.dumps({"refrigerant":"R600a","application":"LBP","compModel":"TEST-1","id_mm":0.7,"length_m":3.2,"srcClass":"field","srcRef":"قياس ورشة اختبار"})); pg.click('#jsv'); pg.wait_for_timeout(300)
-    ok('admin adds capillary record',pg.evaluate("JSON.parse(localStorage.mw_lib).capillary.length")==1)
-    pg.fill('#je',json.dumps({"refrigerant":"R134a","compModel":"BAD","id_mm":31,"length_m":3})); pg.click('#jsv'); pg.wait_for_timeout(300)
-    ok('admin rejects inch-as-mm diameter (unit check)',pg.evaluate("JSON.parse(localStorage.mw_lib).capillary.length")==1)
+    pg.goto(U+'#/kit/circuit/ckt-lamp'); pg.wait_for_timeout(400); pg.click('#cksave'); pg.wait_for_timeout(400); ok('save circuit to library',len(pg.evaluate("JSON.parse(localStorage.mw_cms).circuits.items"))>=1)
+    # ---- data admin (forms, no JSON) + quality
+    def capform(model,idmm):
+        pg.goto(U+'#/cms/data/capillary/new'); pg.wait_for_timeout(300)
+        pg.select_option('#ff_refrigerant','R600a'); pg.select_option('#ff_application','LBP'); pg.fill('#ff_compModel',model); pg.fill('#ff_id_mm',idmm); pg.fill('#ff_length_m','3.2'); pg.select_option('#ff_srcClass','field'); pg.fill('#ff_srcRef','قياس ورشة اختبار'); pg.click('#rsv'); pg.wait_for_timeout(300)
+    capform('TEST-1','0.7'); ok('admin adds capillary record via form',pg.evaluate("JSON.parse(localStorage.mw_lib).capillary.length")==1)
+    capform('BAD','31'); ok('admin rejects inch-as-mm diameter with error next to field',pg.evaluate("JSON.parse(localStorage.mw_lib).capillary.length")==1 and pg.locator('[data-ff="id_mm"] .ferr').count()==1)
     pg.goto(U+'#/kit/capillary'); pg.wait_for_timeout(300); ok('capillary tool finds library record with source class',('TEST-1' in pg.inner_text('#clo')) and ('قياسات وتجارب' in pg.inner_text('#clo')))
-    pg.goto(U+'#/kit/libadmin'); pg.wait_for_timeout(300); ok('library overview lists 8 collections',pg.locator('.rc').count()==8)
+    pg.goto(U+'#/cms/data'); pg.wait_for_timeout(300); ok('data overview lists 6 collections',pg.locator('.rc').count()==6)
     pg.goto(U+'#/kit/history'); pg.wait_for_timeout(300); ok('measurement history page',pg.locator('.hist-it').count()==1)
     # ---- legacy routes still work
     pg.goto(U+'#/tools/units'); pg.wait_for_timeout(300); ok('legacy #/tools still works',pg.locator('#uv').count()==1)
-    for r in ['#/kit','#/kit/cycle','#/kit/circuit','#/kit/comp-compat','#/kit/libadmin/capillary','#/kit/components/relay','#/kit/diag/ac-no-cool']:
+    for r in ['#/kit','#/kit/cycle','#/kit/circuit','#/kit/comp-compat','#/cms/data/capillary/new','#/kit/components/relay','#/kit/diag/ac-no-cool']:
         pg.goto(U+r); pg.wait_for_timeout(400); ok('no horizontal overflow 360px '+r,pg.evaluate("document.documentElement.scrollWidth")<=360)
     # ---- offline after fresh install
     ctx2=b.new_context(viewport={'width':360,'height':740}); o=ctx2.new_page(); o.on('pageerror',lambda e:errs.append('OFFLINE '+A(e)))
     o.goto(U); o.wait_for_function("navigator.serviceWorker.ready.then(()=>true)"); o.wait_for_timeout(1500)
     cached=o.evaluate("caches.keys().then(async k=>{const c=await caches.open(k[0]);return (await c.keys()).map(x=>x.url.split('/').pop())})")
-    need={'eng-units.js','eng-elec.js','eng-refrig.js','eng-comp.js','eng-circuit.js','eng-diag.js','eng-registry.js','kit-data.js','kit.js','kit2.js','circuit-ui.js','kit.css'}
+    need={'eng-cms.js','cms.js','eng-units.js','eng-elec.js','eng-refrig.js','eng-comp.js','eng-circuit.js','eng-diag.js','eng-registry.js','kit-data.js','kit.js','kit2.js','circuit-ui.js','kit.css'}
     ok('SW precaches all new modules',need<=set(cached))
     ctx2.set_offline(True); o.reload(); o.wait_for_timeout(700)
     o.goto(U+'#/kit/pt'); o.wait_for_timeout(300); o.select_option('#rf','R22'); o.fill('#pp','4.5'); o.wait_for_timeout(200); ok('offline: PT tool works',('°C' in o.inner_text('#po')))
-    o.goto(U+'#/kit/circuit/ckt-relay'); o.wait_for_timeout(400); ok('offline: simulator works',('0.500 A' in o.inner_text('#ckres') or '500.0 mA' in o.inner_text('#ckres')))
+    o.goto(U+'#/kit/circuit/ckt-relay'); o.wait_for_timeout(400); o.click('[data-tab="res"]'); ok('offline: simulator works',('0.500 A' in o.inner_text('#ckpanel') or '500.0 mA' in o.inner_text('#ckpanel')))
     o.goto(U+'#/kit/comp-spec'); o.wait_for_timeout(300); o.fill('#csq','gl45'); o.wait_for_timeout(1500); ok('offline: compressor DB search in kit',o.locator('#csl button').count()>=1)
     print('console errors:',errs); b.close()
 fails=[n for s,n in R if s=='FAIL']; print('\n%d FAILED of %d'%(len(fails),len(R)))

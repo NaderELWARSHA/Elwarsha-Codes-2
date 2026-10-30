@@ -58,6 +58,7 @@ function minSectionVD({mat,L,I,V,phase,pf,temp,maxPct}){if(!COND[mat])return{err
 /* اختيار مقطع: يجمع شرط هبوط الجهد + سعة التيار من جدول مُعتمد (إن وُجد) + معاملات التصحيح. بدون جدول = غير محسوم */
 function cableSelect(o,table){const vd=minSectionVD(o);if(vd.err)return vd;const checks=[],kt=[o.kTemp,o.kGroup,o.kOther].map(x=>isNum(x)?x:null);
  if(kt.some(x=>x!==null&&(x<=0||x>1.5)))return{err:"معاملات التصحيح يجب أن تكون بين 0 و1.5"};const K=kt.reduce((a,b)=>a*(b===null?1:b),1),missingK=kt.map((x,i)=>x===null?["درجة الحرارة","تجميع الدوائر","أخرى"][i]:null).filter(Boolean);
+ if(table&&table.mat&&o.mat&&table.mat!==o.mat)return{err:`الجدول المختار لموصل ${table.mat=="al"?"ألومنيوم":"نحاس"} والموصل المختار ${o.mat=="al"?"ألومنيوم":"نحاس"}: اختر جدولًا مطابقًا`};
  const rows=(table&&Array.isArray(table.rows)?table.rows:[]).filter(r=>isNum(r[0])&&isNum(r[1])&&r[0]>0&&r[1]>0).sort((a,b)=>a[0]-b[0]);
  let amp=null;if(rows.length){const need=o.I/K,r=rows.find(r=>r[1]>=need);amp=r?{S:r[0],Iz:r[1],need,K}:{none:true,need,K}}
  const cand=Math.max(vd.std||Infinity,amp&&amp.S?amp.S:0);
@@ -66,8 +67,10 @@ function cableSelect(o,table){const vd=minSectionVD(o);if(vd.err)return vd;const
  else if(amp.none)checks.push({ok:false,t:`لا يوجد مقطع في الجدول «${table.name||""}» يتحمل ${p(amp.need,4)} A بعد التصحيح`});
  else checks.push({ok:true,t:`سعة التيار من جدول «${table.name||""}»: ${amp.S} mm² يتحمل ${amp.Iz} A ≥ ${p(amp.need,4)} A (= ${o.I} ÷ ${p(K,4)})`});
  if(missingK.length)checks.push({ok:null,t:"معاملات تصحيح لم تُدخل (اعتُبرت 1): "+missingK.join("، ")});
- checks.push({ok:null,t:"لم يُتحقق منها هنا: تنسيق الحماية (Ib ≤ In ≤ Iz)، تحمل القصر، تيار البدء للموتورات، متطلبات الكود المحلي."});
- const decided=!!rows.length&&amp&&!amp.none&&!missingK.length&&isFinite(cand);
+ if(isNum(o.In)&&o.In>0){if(o.In<o.I)checks.push({ok:false,t:`تقنين القاطع In = ${o.In} A أقل من تيار الحمل Ib = ${o.I} A: سيفصل أثناء التشغيل العادي`});else if(amp&&amp.S){const Izc=amp.Iz*K;checks.push(o.In<=Izc+1e-9?{ok:true,t:`تنسيق الحماية: Ib ${o.I} ≤ In ${o.In} ≤ Iz بعد التصحيح ${p(Izc,4)} A`}:{ok:false,t:`In ${o.In} A أكبر من سعة الكابل بعد التصحيح ${p(Izc,4)} A: الكابل غير محمي — كبّر المقطع أو صغّر القاطع`})}else checks.push({ok:null,t:`Ib ${o.I} ≤ In ${o.In} محقق، لكن In ≤ Iz غير محسوم بدون جدول سعة`})}
+ else checks.push({ok:null,t:"تنسيق الحماية (Ib ≤ In ≤ Iz) لم يُفحص: اكتب تقنين القاطع In."});
+ checks.push({ok:null,t:"لم يُتحقق منها هنا: تحمل القصر، تيار البدء للموتورات، متطلبات الكود المحلي."});
+ const decided=!!rows.length&&amp&&!amp.none&&!missingK.length&&isFinite(cand)&&!checks.some(c=>c.ok===false);
  return{vd,amp,candidate:isFinite(cand)?cand:null,decided:false,partial:decided,checks,note:"النتيجة «مقطع مرشح» وليست مقطعًا نهائيًا. القرار النهائي بعد مراجعة الحماية والكود المعمول به."}}
 function cleanAmpTable(t){if(!t||typeof t!="object")return null;const rows=Array.isArray(t.rows)?t.rows.filter(r=>Array.isArray(r)&&isNum(+r[0])&&isNum(+r[1])&&+r[0]>0&&+r[1]>0).map(r=>[+r[0],+r[1]]).slice(0,40):[];if(!rows.length)return null;
  return{id:String(t.id||"").replace(/[^\w-]/g,"").slice(0,40)||("t"+Date.now().toString(36)),name:String(t.name||"").slice(0,120),mat:t.mat=="al"?"al":"cu",method:String(t.method||"").slice(0,60),insulation:String(t.insulation||"").slice(0,30),loaded:+t.loaded||null,ambient:+t.ambient||null,status:String(t.status||"manual").slice(0,20),src:String(t.src||"").slice(0,300),rows}}

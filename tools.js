@@ -30,6 +30,13 @@ for(let i=1;i<p.length;i++)if(R<=p[i][1]){const [t0,r0]=p[i-1],[t1,r1]=p[i];retu
 
 function interpR(points,T){if(!Array.isArray(points)||points.length<2)return{err:"المنحنى غير معرّف"};if(!isNum(T))return{err:"أدخل درجة حرارة صحيحة"};const p=[...points].sort((a,b)=>a[0]-b[0]);if(T<p[0][0]||T>p[p.length-1][0])return{err:`خارج نطاق المنحنى (${p[0][0]} إلى ${p[p.length-1][0]} °C)`};
 for(let i=1;i<p.length;i++)if(T<=p[i][0]){const [t0,r0]=p[i-1],[t1,r1]=p[i];return{R:r0+(T-t0)*(r1-r0)/(t1-t0),note:"استيفاء خطي بين نقطتين من المنحنى"}}return{err:"غير ممكن"}}
+
+/* استيفاء محسَّن لـ NTC: خطي بين ln(R) و1/T (كلفن) — يطابق شكل منحنى الثرمستور (معادلة بيتا بين كل نقطتين). نفس قيم الجدول عند النقاط، ورفض أي استقراء خارج النطاق */
+const isNTC=p=>{const q=[...p].sort((a,b)=>a[0]-b[0]);return q.length>=2&&q.every((x,i)=>i==0||x[1]<q[i-1][1])&&q.every(x=>x[1]>0)};
+function interpT(points,R){if(!Array.isArray(points)||points.length<2)return{err:"المنحنى غير معرّف"};if(!isNTC(points))return interp(points,R);if(!isNum(R)||R<=0)return{err:"أدخل مقاومة موجبة"};const p=[...points].sort((a,b)=>a[1]-b[1]);if(R<p[0][1]||R>p[p.length-1][1])return{err:`خارج نطاق المنحنى (${p[0][1]} – ${p[p.length-1][1]})`};
+ for(let i=1;i<p.length;i++)if(R<=p[i][1]){const [t0,r0]=p[i-1],[t1,r1]=p[i],x0=1/(t0+273.15),x1=1/(t1+273.15),x=x0+(Math.log(R)-Math.log(r0))*(x1-x0)/(Math.log(r1)-Math.log(r0));return{T:1/x-273.15,note:"استيفاء بيتا (ln R مقابل 1/T) بين أقرب نقطتين في جدول الشركة — أدق من الخطي لحساسات NTC"}}return{err:"غير ممكن"}}
+function interpRT(points,T){if(!Array.isArray(points)||points.length<2)return{err:"المنحنى غير معرّف"};if(!isNTC(points))return interpR(points,T);if(!isNum(T))return{err:"أدخل درجة حرارة صحيحة"};const p=[...points].sort((a,b)=>a[0]-b[0]);if(T<p[0][0]||T>p[p.length-1][0])return{err:`خارج نطاق المنحنى (${p[0][0]} إلى ${p[p.length-1][0]} °C)`};
+ for(let i=1;i<p.length;i++)if(T<=p[i][0]){const [t0,r0]=p[i-1],[t1,r1]=p[i],x0=1/(t0+273.15),x1=1/(t1+273.15),x=1/(T+273.15);return{R:Math.exp(Math.log(r0)+(x-x0)*(Math.log(r1)-Math.log(r0))/(x1-x0)),note:"استيفاء بيتا بين أقرب نقطتين"}}return{err:"غير ممكن"}}
 /* ---- منحنيات حساسات (NTC) من أدلة خدمة الشركات؛ تُخزَّن بالأوم. كل منحنى خاص بالشركة/السلسلة المذكورة فقط ---- */
 const zip=(a,b,k=1)=>a.map((x,i)=>[x,Math.round(b[i]*k*1e6)/1e6]),F2C=f=>Math.round((f-32)/1.8*100)/100,GREE="https://www.greecomfort.com/assets/our-products/all-match-mini-console-r32/documents/all-match-mini-console-r32-service-manual-a.pdf";
 const T15=[-19,-18,-16,-14,-12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58],R15=[138.10,128.60,115.00,102.90,92.22,82.75,74.35,66.88,60.23,54.31,49.02,44.31,40.09,36.32,32.94,29.90,27.18,24.73,22.53,20.54,18.75,17.14,15.68,14.36,13.16,12.07,11.09,10.20,9.38,8.64,7.97,7.35,6.79,6.28,5.81,5.38,4.99,4.63,4.29,3.99];
@@ -58,5 +65,5 @@ if(!e.length){const st={},stack=new Set();let cyc=false;const dfs=k=>{if(stack.h
 if(!str(f.srcRef))w.push("لا يوجد مصدر مذكور للمسار");if(f.status!=="verified")w.push("المسار غير موسوم كموثّق");return{ok:!e.length,errors:e,warnings:w}}
 const flowMatches=(f,q,strict)=>{const dev=!f.deviceType||!q.deviceType||N(f.deviceType)===N(q.deviceType),br=!f.brand||!q.brand||N(f.brand)===N(q.brand),cd=!f.codes.length||(q.code&&f.codes.some(c=>N(c)===N(q.code)));return dev&&br&&cd&&(!strict||f.codes.length>0)};
 const flowsFor=(flows,q,strict)=>flows.filter(f=>flowMatches(f,q,strict));
-const api={SENSOR_SEEDS,interpR,FW,convert,convertAll,ohm,power,pctDiff,pctDiffTol,compareValues,parsePoints,interp,cleanFlow,validateFlow,flowsFor};
+const api={SENSOR_SEEDS,interpR,interpT,interpRT,isNTC,FW,convert,convertAll,ohm,power,pctDiff,pctDiffTol,compareValues,parsePoints,interp,cleanFlow,validateFlow,flowsFor};
 if(typeof module!="undefined")module.exports=api;else g.TL=api})(typeof window!="undefined"?window:globalThis);
