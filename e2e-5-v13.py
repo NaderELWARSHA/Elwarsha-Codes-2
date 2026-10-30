@@ -94,7 +94,7 @@ with sync_playwright() as p:
     pg.evaluate("document.querySelectorAll('.kt')")
     pg.click('[data-md="wire"]')
     def tap(k):
-        box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
+        pg.locator('#cks [data-t="%s"] circle'%k).first.evaluate("e=>e.scrollIntoView({block:'center'})"); box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
     pg.click('#zfit'); tap('DC1|+'); tap('LP1|a'); tap('LP1|b'); tap('DC1|-')
     pg.click('#cksim'); pg.wait_for_timeout(250); pg.click('[data-tab="err"]'); ok('new circuit built by tapping works (no errors except voltage note)',pg.locator('#ckpanel .flag.bad').count()==0)
     answers.append('دائرتي الأولى'); pg.click('#cksave'); pg.wait_for_timeout(300); cid=pg.evaluate("Object.keys(JSON.parse(localStorage.mw_cms).circuits.items).find(k=>JSON.parse(localStorage.mw_cms).circuits.items[k].name=='دائرتي الأولى')")

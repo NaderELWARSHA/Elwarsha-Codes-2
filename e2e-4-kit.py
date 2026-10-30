@@ -56,7 +56,7 @@ with sync_playwright() as p:
     pg.click('#cksim'); pg.click('[data-tab="lib"]'); pg.click('[data-add="lamp"]'); pg.wait_for_timeout(200); ok('palette adds component + props panel',pg.locator('#cks [data-c="LP1"]').count()==1 and pg.locator('#ckpanel input[data-pp="P"]').count()==1)
     pg.click('[data-md="wire"]'); pg.wait_for_timeout(100)
     def tap(k):
-        box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
+        pg.locator('#cks [data-t="%s"] circle'%k).first.evaluate("e=>e.scrollIntoView({block:'center'})"); box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
     tap('LP1|a'); tap('S1|b'); ok('wire mode creates wire by tapping two terminals',pg.evaluate("JSON.parse(sessionStorage.mw_ck_cur).ck.wires.length")==nw0+1)
     pg.click('#cksim'); pg.wait_for_timeout(250); pg.click('[data-tab="err"]'); ok('simulator warns missing connection point',('نقطة توصيل مفقودة' in pg.inner_text('#ckpanel')))
     pg.goto(U+'#/kit/circuit/ckt-nofrost'); pg.wait_for_timeout(500); pg.click('[data-tab="res"]'); pg.click('#strun'); pg.wait_for_timeout(300); ok('no-frost scenario: 4 states all as expected',pg.locator('#stout .flag.ok').count()==4)

@@ -122,6 +122,7 @@ function analyze0(ckt,opt={}){const {comps,wires}=normalize(ckt),iss=[],add=(lvl
  const netAct=new Map();activeT.forEach(k=>{const n=node(k);netAct.set(n,(netAct.get(n)||0)+1)});
  comps.filter(c=>c.type=="junction").forEach(c=>{const k=tKey(c.id,"n");if((netAct.get(node(k))||0)>=2)activeT.add(k)});
  wires.forEach(x=>{res.wires[x.id]={on:activeT.has(tKey(x.a.c,x.a.t))&&activeT.has(tKey(x.b.c,x.b.t))}});
+ res.tv={};comps.forEach(c=>T[c.type].terms.forEach(t=>{const v=sol.V[node(tKey(c.id,t))];res.tv[c.id+"|"+t]=[v[0],v[1]]}));
  res.trace={BR:BR.map(b=>({c:b.c,a:b.a,b:b.b,na:b.na,nb:b.nb,k:b.k,tag:b.tag||"",I:b.k=="Z"?abs(div(sub(sol.V[b.na],sol.V[b.nb]),b.z)):(b.idx!=null?abs(sol.I[b.idx]):(b.loop?null:0)),V:abs(sub(sol.V[b.na],sol.V[b.nb]))}))};
  iss.forEach(i=>{if(FIX[i.code])i.fix=FIX[i.code](i,comps)});res.nets=nN;res.iterations=it+1;return res}
 const nm=(cs,id)=>label(cs.find(c=>c.id==id));
@@ -172,7 +173,14 @@ function cleanCircuit(o){const ck=x=>x&&typeof x=="object"&&!Array.isArray(x);re
  desc:txt(o.desc),how:txt(o.how),expected:txt(o.expected),published:o.published!==false,roles:ck(o.roles)?Object.fromEntries(Object.entries(o.roles).map(([k,v])=>[String(k).slice(0,30),txt(v,400)])):{},tests:Array.isArray(o.tests)?o.tests.map(x=>txt(x,400)).filter(Boolean).slice(0,30):[],
  faults:Array.isArray(o.faults)?o.faults.filter(ck).slice(0,20).map(f=>({name:txt(f.name,120),id:String(f.id||"").slice(0,30),state:ck(f.state)?f.state:{},...(Array.isArray(f.also)?{also:f.also.filter(x=>ck(x)&&ck(x.state)).slice(0,5).map(x=>({id:String(x.id).slice(0,30),state:x.state}))}:{}),expect:txt(f.expect,400)})):[],edu:!!o.edu,
  comps:o.comps.map(c=>({id:c.id,type:c.type,name:String(c.name||"").slice(0,40),x:+c.x||0,y:+c.y||0,rot:[0,90,180,270].includes(+c.rot)?+c.rot:0,props:ck(c.props)?Object.fromEntries(Object.entries(c.props).filter(([k,v])=>k in T[c.type].props&&isNum(+v)).map(([k,v])=>[k,+v])):{},state:ck(c.state)?{...c.state}:undefined,expect:["on","off"].includes(c.expect)?c.expect:undefined})),
- wires:o.wires.map((w,i)=>({id:String(w.id||"w"+i).slice(0,30),a:{c:w.a.c,t:String(w.a.t)},b:{c:w.b.c,t:String(w.b.t)},...(w.broken?{broken:true}:{}),...(w.short?{short:true}:{})})),steps:Array.isArray(o.steps)?o.steps.slice(0,20):undefined}}
+ wires:o.wires.map((w,i)=>({id:String(w.id||"w"+i).slice(0,30),a:{c:w.a.c,t:String(w.a.t)},b:{c:w.b.c,t:String(w.b.t)},...(w.broken?{broken:true}:{}),...(w.short?{short:true}:{}),...(w.flip?{flip:true}:{})})),steps:Array.isArray(o.steps)?o.steps.slice(0,20):undefined}}
+/* ---- أفوميتر افتراضي: المقاومة بين نقطتين والدائرة مفصولة الكهرباء (المصادر مفصولة = مفتوحة، المكثف مفتوح، الملف = مقاومته) ---- */
+function measureR(ckt,ka,kb){const {comps,wires}=normalize(ckt),tKey=(c,t)=>c+"|"+t,TI=new Map();comps.forEach(c=>T[c.type].terms.forEach(t=>TI.set(tKey(c.id,t),TI.size)));if(!TI.has(ka)||!TI.has(kb))return{err:"نقطة غير موجودة"};
+ const uf=UF(TI.size);wires.forEach(x=>uf.u(TI.get(tKey(x.a.c,x.a.t)),TI.get(tKey(x.b.c,x.b.t))));const NI=new Map(),node=k=>{const r=uf.f(TI.get(k));if(!NI.has(r))NI.set(r,NI.size);return NI.get(r)};comps.forEach(c=>T[c.type].terms.forEach(t=>node(tKey(c.id,t))));
+ const na=node(ka),nb=node(kb);if(na===nb)return{R:0,note:"النقطتان على نفس السلك"};const eng={};comps.filter(c=>c.type=="relay").forEach(c=>eng[c.id]=false);
+ const BR=[];comps.forEach(c=>{const cc=T[c.type].src?{...c,state:{...(c.state||{}),on:false}}:c;branches(cc,0,true,eng).forEach(b=>BR.push({...b,c:c.id,na:node(tKey(c.id,b.a)),nb:node(tKey(c.id,b.b))}))});
+ BR.push({k:"V",v:1,na,nb,c:"__meter"});const iss=[],nN=NI.size,sol=solveNet(BR,nN,[],true,iss,comps.concat([{id:"__meter",type:"vdc"}]));if(!sol)return{R:0,note:"يوجد سلك/تلامس مغلق مباشر بين النقطتين"};
+ const mb=BR.find(b=>b.c=="__meter"),I=Math.abs(sol.I[mb.idx][0]);if(I<1e-9)return{R:Infinity,note:"لا يوجد مسار بين النقطتين (OL)"};const R=1/I;return{R,note:R<1?"استمرارية (بيب)":"مسار عبر عناصر الدائرة"}}
 /* ---- «اشرح لي الدائرة»: مسارات التيار من المصدر وحتى العودة ---- */
 const STW=(c)=>{const s={...(T[c.type].state||{}),...(c.state||{})};if("closed" in s)return s.closed?"مغلق":"مفتوح";if("blown" in s)return s.blown?"محروق":"سليم";if("tripped" in s)return s.tripped?"فاصل":"مغلق";if(c.type=="timer")return s.pos=="defrost"?"على الديفروست":"على التبريد";if(c.type=="spdt")return"على الوضع "+(s.pos||"a");if(c.type=="ptc")return s.hot?"ساخن":"بارد";return""};
 const fI=I=>I>=1?I.toFixed(2)+" A":I>=1e-3?(I*1000).toFixed(1)+" mA":(I*1e6).toFixed(0)+" µA";
@@ -199,5 +207,5 @@ function teach(ckt,res){const {comps}=normalize(ckt),A=[],B=[],Cc=[],nmC=c=>c.na
   if(ZERO_TYPES.has(c.type))B.push(`• على ${n}: ${r.V>1?f(r.V)+" V ← العنصر مفتوح وهو الذي يقطع المسار":"≈ 0 V ← مغلق/سليم (لا يوجد هبوط عليه)"}.`);else if(c.type!="spdt")B.push(`• على طرفي ${n}: ≈ ${f(r.V)} V${r.I>1e-6?` ، والتيار بالكلامب ≈ ${fI(r.I)}`:" (لا يعمل)"}.`)});
  Cc.push("قاعدة سريعة: مع وجود التغذية، جهد كامل على عنصر تحكم أو حماية في المسار = هو المفتوح. وجهد صفر على حمل لا يعمل = المشكلة قبله في المسار.");
  return{off:A,on:B,tips:Cc,warn:"القياس على الجهد خطر: مجسات معزولة، يد واحدة، وجهاز بفئة أمان مناسبة. القراءات المتوقعة هنا من قيم الدائرة التعليمية، والقيم الحقيقية من مرجع كل جهاز."}}
-const api={TYPES:T,ZERO_TYPES,LOADS,branches,analyze,scenario,validateCircuit,cleanCircuit,label,explain,teach,FIX,MODEL,_c:{C,add,sub,mul,div,abs}};
+const api={TYPES:T,ZERO_TYPES,LOADS,branches,analyze,measureR,scenario,validateCircuit,cleanCircuit,label,explain,teach,FIX,MODEL,_c:{C,add,sub,mul,div,abs}};
 if(typeof module!="undefined")module.exports=api;else g.ECK=api})(typeof window!="undefined"?window:globalThis);

@@ -211,7 +211,7 @@ $("#rf").onchange=async ev=>{const t=await readFile(ev.target.files[0]);if(t==nu
 if(!confirm(`ستُستبدل البيانات الحالية (${D.faults.length} سجل أعطال / ${D.custom.length} إضافة كباس) بـ ${v.summary.faults} / ${v.summary.custom}. تؤخذ نسخة من الحالة الحالية أولًا. متابعة؟`))return;
 if(v.data.attachments.length){try{await ATT.importAll(v.data.attachments)}catch(x){return alert("تعذر استيراد المرفقات: "+x.message+" — لم تُستعد البيانات.")}}if(safe()&&commit(d=>{d.faults=v.data.faults;d.custom=v.data.custom})){X2.log("استعادة نسخة",v.summary.faults+" عطل / "+v.summary.custom+" كباس");if(v.data.lists){LSt=Y.cleanLists(v.data.lists);if(!LSt.seeded)LSt=Y.seedLists(LSt);saveLists()}if(Array.isArray(o.favorites))S.set("mw_fav",o.favorites.filter(x=>x&&typeof x.h=="string"&&x.h.startsWith("#/")).slice(0,100));const kr=kitRestore(o.kit);admPage();if(kr)toast("تمت استعادة بيانات الحقيبة أيضًا: "+kr)}}}
 /* بيانات الحقيبة في النسخة الكاملة: المكتبات، إدارة المحتوى، المسارات، الحساسات، القياسات، المفضلة، السلة */
-const KIT_KEYS={mw_lib:"o",mw_cms:"o",mw_flows:"a",mw_sensors:"a",mw_meas:"a",mw_kfav:"a",mw_trash:"a"};
+const KIT_KEYS={mw_lib:"o",mw_cms:"o",mw_flows:"a",mw_sensors:"a",mw_meas:"a",mw_kfav:"a",mw_trash:"a",mw_harness:"a",mw_kin:"o"};
 function kitData(){const o={};for(const k in KIT_KEYS){const v=S.get(k,null);if(v!=null)o[k]=v}return o}
 function kitRestore(k){if(!k||typeof k!="object"||Array.isArray(k))return"";const done=[];for(const [key,t] of Object.entries(KIT_KEYS)){const v=k[key];if(v==null)continue;if(t=="a"?!Array.isArray(v):(typeof v!="object"||Array.isArray(v)))continue;if(S.set(key,v))done.push(key.replace("mw_",""))}return done.join("، ")}
 /* ---- الموجّه (SPA) ---- */
