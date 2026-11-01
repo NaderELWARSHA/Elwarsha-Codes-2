@@ -241,13 +241,14 @@ with sync_playwright() as p:
 
     # ================= بدون إنترنت + إشعار التحديث =================
     ctx, pg = page(); pg.goto(U); pg.wait_for_timeout(1500); pg.reload(); pg.wait_for_timeout(1200)
-    ok('[12] service worker cache name comes from version.js (mrf-v15)', 'mrf-v15' in pg.evaluate("caches.keys()"))
+    cur = __import__('re').search(r'CACHE_NAME\s*=\s*"([^"]+)"', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'version.js'), encoding='utf8').read()).group(1)
+    ok('[12] service worker cache name comes from version.js (%s)' % cur, cur in pg.evaluate("caches.keys()"))
     ctx.set_offline(True); pg.goto(U + '#/glossary'); pg.wait_for_timeout(500); ok('offline: glossary works', pg.locator('.gl-it').count() >= 20)
     pg.evaluate("localStorage.mw_tour='true'"); pg.goto(U + '#/kit/superheat'); pg.wait_for_timeout(400); ok('offline: guide layer works', pg.locator('.kg-intro').count() == 1)
     ctx.set_offline(False)
     vp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'version.js'); orig_v = open(vp, encoding='utf8').read()
     try:
-        open(vp, 'w', encoding='utf8').write(orig_v.replace('"mrf-v15"', '"mrf-v15-test"'))
+        open(vp, 'w', encoding='utf8').write(orig_v.replace('CACHE_NAME = "', 'CACHE_NAME = "test-'))
         pg.goto(U); pg.wait_for_timeout(300); pg.evaluate("navigator.serviceWorker.getRegistration().then(r=>r&&r.update())"); pg.wait_for_timeout(2500)
         ok('[12] version change → user sees «يوجد تحديث» banner', pg.locator('#upd').count() == 1)
     finally:

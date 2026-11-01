@@ -137,6 +137,7 @@ with sync_playwright() as p:
     # ---- performance
     t0=time.time(); pg.goto(U+'#/'); pg.wait_for_selector('.tile'); tl=time.time()-t0; ok('home renders fast (%.2fs < 2s)'%tl,tl<2)
     t0=time.time(); pg.goto(U+'#/kit/circuit/ckt-nofrost'); pg.wait_for_selector('#cks .comp'); tc=time.time()-t0; ok('simulator opens fast (%.2fs < 2s)'%tc,tc<2)
+    pg.goto(U+'#/'); pg.reload(); pg.wait_for_selector('.tile'); pg.wait_for_timeout(300)  # v15.1: نقيس التحميل الأولي للرئيسية (أدوات الإدارة بتتحمّل عند الحاجة)
     sz=pg.evaluate("performance.getEntriesByType('resource').filter(r=>/\\.js$/.test(r.name)&&!/compressors-base/.test(r.name)).reduce((s,r)=>s+(r.decodedBodySize||0),0)"); ok('app JS (without compressor DB) under 720 KB (%d KB) — v15: +40KB شرح المبتدئ/القاموس'%(sz//1024),sz<720*1024)
     # ---- desktop layout
     ctx3=b.new_context(viewport={'width':1280,'height':860}); d3=ctx3.new_page(); d3.on('pageerror',lambda e:errs.append('DESK '+A(e)))
