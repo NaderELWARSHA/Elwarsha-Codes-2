@@ -298,7 +298,35 @@
     return `<h2>🔍 التكرار والاستيراد من Excel</h2><div class="row"><a class="primary" href="#/dups" id="admdup">🔍 كاشف التكرار والدمج${n ? ` <span class="chip st-warn">${n}</span>` : ""}</a><a class="primary" href="#/import">📥 استيراد Excel / CSV</a><a class="secondary" href="#/clean">🧹 تنظيف بيانات قديمة</a></div>
      <div class="row"><button class="secondary" id="xfx" type="button">⬇️ الأعطال Excel</button><button class="secondary" id="xcx" type="button">⬇️ الكباسات المضافة Excel</button><button class="secondary" id="xtc" type="button">⬇️ قالب كباسات</button><button class="secondary" id="xtf" type="button">⬇️ قالب أعطال</button></div>`;
   }
-  function wireAdmin() { const b = (id, f) => { const x = $(id); if (x) x.onclick = f; }; b("#xfx", exportFaults); b("#xcx", exportComps); b("#xtc", () => template("comp")); b("#xtf", () => template("fault")); }
+  function wireAdmin() { const b = (id, f) => { const x = $(id); if (x) x.onclick = f; }; b("#xfx", exportFaults); b("#xcx", exportComps); b("#xtc", () => template("comp")); b("#xtf", () => template("fault")); wirePack(); }
 
-  g.DUPUI = { page, cleanPage, merge, importPage, formWatch, adminBlock, wireAdmin, exportFaults, exportComps, template, fixCompLinks };
+  /* ================= 📦 نشر المرجع للكل (حزمة data-pack.json) ================= */
+  function packBlock() {
+    if (typeof PK == "undefined" || typeof packState != "function") return "";
+    const P = PK.build(packState(), { ver: "x" }), c = P.counts, I = st().get("mw_pack", null), dt = v => { try { return new Date(v).toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" }); } catch (e) { return v; } };
+    return `<h2>📦 نشر المرجع للكل</h2>
+     <p class="mu">أي حد يفتح لينك البرنامج هياخد نسخة من البيانات دي كـ<b>مرجع</b> على جهازه (يقدر يزود عليها حاجاته، وتعديلاته ما بتتكتبش فوقها). <b>مش بيتنشر:</b> القياسات، الضفائر، سجل التغييرات، المفضلة، الصور، وقفل الإدارة.</p>
+     <div class="pk-opts"><label class="chk"><input type="checkbox" id="pkf" checked> 🧯 أكواد الأعطال (${c.faults}) والتيست مود (${c.tests})</label>
+     <label class="chk"><input type="checkbox" id="pkc" checked> 🧊 الكباسات المضافة (${c.custom})</label>
+     <label class="chk"><input type="checkbox" id="pkt" checked> 🧰 محتوى الإدارة: دوائر، مسارات تشخيص، مكونات، جداول، حساسات (${c.content})</label>
+     <label class="chk"><input type="checkbox" id="pkl" checked> 🏷️ قوائم الماركات والفئات</label></div>
+     <label>ملاحظة على النسخة (اختياري)<input id="pkn" maxlength="120" placeholder="مثلًا: أضفت أكواد دليل العربي"></label>
+     <div class="row"><button class="primary" id="pkgo" type="button">⬇️ نزّل ملف المرجع (data-pack.json)</button></div>
+     <ol class="steps2"><li>نزّل الملف.</li><li>ارفعه مع ملفات البرنامج <b>بنفس الاسم data-pack.json</b> مكان القديم — من غير ما تغيّر رقم الإصدار.</li><li>أي حد يفتح البرنامج وهو متصل بالنت هياخد التحديث لوحده ويظهرله «📚 اتحدّث المرجع».</li></ol>
+     <p class="mu">${I && I.ver ? `المرجع المركّب على الجهاز ده: نسخة ${E(dt(I.ver))}` : "لسه مفيش مرجع منشور اتركّب على الجهاز ده."}</p>`;
+  }
+  function wirePack() {
+    const go = $("#pkgo"); if (!go) return;
+    go.onclick = () => {
+      const opt = { faults: $("#pkf").checked, custom: $("#pkc").checked, content: $("#pkt").checked, lists: $("#pkl").checked, note: $("#pkn").value.trim(), app: typeof APP_VERSION != "undefined" ? APP_VERSION : "" };
+      if (!opt.faults && !opt.custom && !opt.content && !opt.lists) return toast("اختار حاجة واحدة على الأقل");
+      const P = PK.build(packState(), opt), c = P.counts;
+      if (!confirm(`هتنزّل مرجع فيه: ${opt.faults ? c.faults + " كود و" + c.tests + " تيست مود، " : ""}${opt.custom ? c.custom + " كباس، " : ""}${opt.content ? c.content + " عنصر محتوى، " : ""}${opt.lists ? "القوائم" : ""}.\nأي حد يفتح اللينك هيشوفهم. نكمّل؟`)) return;
+      dl("data-pack.json", JSON.stringify(P), "application/json");
+      st().set("mw_pack_pub", { ver: P.ver, counts: c }); X2.log("نشر المرجع", `نسخة ${P.ver}`);
+      toast("اتنزّل ✓ — ارفعه مع ملفات البرنامج باسم data-pack.json");
+    };
+  }
+
+  g.DUPUI = { page, cleanPage, packBlock, merge, importPage, formWatch, adminBlock, wireAdmin, exportFaults, exportComps, template, fixCompLinks };
 })(window);

@@ -1,5 +1,5 @@
 /* المصدر الوحيد لرقم الإصدار واسم الكاش.
    يقرؤه sw.js (importScripts) والواجهة (index.html). غيّر هنا فقط عند كل إصدار:
    تغيير هذا الملف يجعل المتصفح يكتشف نسخة جديدة ويظهر للمستخدم «يوجد تحديث». */
-self.APP_VERSION = "15.2.0";
-self.CACHE_NAME = "mrf-v15-2";
+self.APP_VERSION = "15.3.0";
+self.CACHE_NAME = "mrf-v15-3";
