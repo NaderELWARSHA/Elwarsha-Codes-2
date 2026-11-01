@@ -26,6 +26,8 @@ function windings(inp,opt={}){const L=inp.known?["C-R","C-S","R-S"]:["1-2","1-3"
  out.sumCheck={max:r[iHi],sum,diff,allow,ok:Math.abs(diff)<=allow};out._map=inp.known?{CR:0,CS:1,RS:2}:{CR:iLo,CS:iMid,RS:iHi};out._mapSure=inp.known||Math.abs(diff)<=allow&&r[iMid]-r[iLo]>allow;
  if(r.every(x=>x<=2*res)){out.status="all-low";out.findings.push("كل القراءات قريبة من الصفر: إما قصر شديد، أو القراءات أقل من دقة جهازك (ملفات كباس كبير). استخدم جهازًا بدقة أعلى (0.01Ω) أو طريقة الأربعة أطراف، وصفّر أسلاك الجهاز.");return refCheck(out,r,L,opt)}
  if(Math.abs(r[0]-r[1])<=allow&&Math.abs(r[1]-r[2])<=allow){out.status="looks-3ph";out.findings.push("القراءات الثلاث متساوية تقريبًا: هذا نمط كباس ثلاثي الأطوار وليس أحادي. اختر «ثلاثي الأطوار» للتحليل.");return refCheck(out,r,L,opt)}
+ /* قراءة واحدة شبه صفرية والباقي طبيعي: قصر محتمل بين هذين الطرفين — يُذكر صراحة قبل فحص المجموع */
+ if(r[iLo]<=2*res&&r[iMid]>4*res){out.status="one-low";out.findings.push(`قراءة ${L[iLo]} شبه صفر (${fmtR(r[iLo])}) بينما الباقي ${fmtR(r[iMid])} و${fmtR(r[iHi])}: قصر محتمل بين الطرفين ${pairs[iLo].join(" و")} (لفات ملتحمة أو طرفان ملامسان لبعض). صفّر أسلاك الجهاز ونظّف الأطراف وأعد القياس قبل الحكم.`);out.confidence="منخفضة — أعد القياس";return refCheck(out,r,L,opt)}
  const [a,b]=pairs[iHi],common=pairs[iLo].find(t=>pairs[iMid].includes(t));
  if(out.sumCheck.ok){out.status="consistent";out.common=common;
   if(inp.known){const ok=pairs[iHi].includes("R")&&pairs[iHi].includes("S");out.findings.push(ok?"العلاقة سليمة: R-S ≈ C-R + C-S (فرق "+(+diff.toPrecision(3))+" Ω ضمن السماحية).":`أكبر قراءة ليست بين R وS بل ${L[iHi]}: إما الأطراف معلَّمة خطأ، أو قراءات غير طبيعية. راجع تعليم الأطراف.`);if(!ok)out.status="label-mismatch"}
@@ -35,7 +37,7 @@ function windings(inp,opt={}){const L=inp.known?["C-R","C-S","R-S"]:["1-2","1-3"
    if(r[iMid]-r[iLo]<=allow)out.warnings.push("قراءتا C-R وC-S متقاربتان جدًا: التمييز بين R وS غير مؤكد. اعتمد على تعليم لوحة الأطراف أو الداتا شيت.")}
   out.confidence=r[iMid]-r[iLo]>allow?"متوسطة إلى عالية (للتعرف على الأطراف فقط)":"منخفضة إلى متوسطة"}
  else{out.status="inconsistent";out.findings.push(`القراءات لا تحقق العلاقة (أكبر قراءة ${fmtR(r[iHi])} ${diff>0?"أكبر":"أصغر"} من مجموع الأخريين ${fmtR(sum)} بفرق ${(+Math.abs(diff).toPrecision(3))} Ω > السماحية ${(+allow.toPrecision(3))} Ω).`);
-  out.findings.push(diff<0?"احتمالات: قصر جزئي بين اللفات في أحد الملفين، أو قصر بين الملفين، أو تلامس سيئ أثناء القياس. أعد القياس على الأطراف مباشرة بعد تنظيفها.":"احتمالات: مقاومة تلامس عالية/طرف متآكل في قراءة R-S، أو قراءة خاطئة. أعد القياس.");out.confidence="منخفضة"}
+  out.findings.push(diff<0?"احتمالات: قصر جزئي بين اللفات في أحد الملفين، أو قصر بين الملفين، أو تلامس سيئ أثناء القياس. أعد القياس على الأطراف مباشرة بعد تنظيفها.":`احتمالات: مقاومة تلامس عالية/طرف متآكل في قراءة ${L[iHi]}، أو قراءة خاطئة. أعد القياس.`);out.confidence="منخفضة"}
  return refCheck(out,r,L,opt)}
 /* مقارنة بقيم الموديل المرجعية (مع تصحيح الحرارة) */
 function refCheck(out,r,L,opt){const ref=opt.ref;out.phase=1;if(!ref){out.refNote="لا توجد قيم مرجعية لهذا الموديل: لا يمكن الحكم على أن المقاومة «طبيعية». المقارنة هنا داخلية بين القراءات فقط.";return out}

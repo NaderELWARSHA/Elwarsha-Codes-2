@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+import e2e_fixture  # v15: الإدارة مقفولة افتراضيًا
 import json,time
 A=lambda s:str(s).encode('ascii','replace').decode()
 U='http://localhost:8099/index.html'
@@ -30,7 +31,7 @@ with sync_playwright() as p:
     pg.goto(U+'#/kit/cat/washer'); pg.wait_for_timeout(300); ok('device section link filters kit',pg.locator('.kt').count()>=1 and pg.locator('[data-kc="washer"].on').count()==1)
     # ---- unified tool template
     pg.goto(U+'#/kit/superheat'); pg.wait_for_timeout(300)
-    ok('tool template: description, how-to, quick/advanced, actions, references',pg.locator('.tdesc').count()==1 and pg.locator('details.how').count()==1 and pg.locator('.seg').count()==1 and pg.locator('#rrs').count()==1 and pg.locator('details.refs').count()>=1)
+    ok('tool template: description, how-to, quick/advanced, actions, references',pg.locator('.tdesc').count()==1 and pg.locator('details.how').count()==1 and pg.locator('.seg [data-md="quick"]').count()==1 and pg.locator('#rrs').count()==1 and pg.locator('details.refs').count()>=1)
     ok('quick mode hides advanced fields',not pg.locator('#slo').is_visible())
     pg.click('[data-md="adv"]'); pg.wait_for_timeout(150); ok('advanced mode shows extra fields',pg.locator('#slo').is_visible())
     pg.click('[data-md="quick"]')
@@ -127,6 +128,7 @@ with sync_playwright() as p:
     # ---- admin lock
     pg.goto(U+'#/cms/security'); pg.wait_for_timeout(300); pg.fill('#p1','1234'); pg.fill('#p2','1234'); pg.click('#psv'); pg.wait_for_timeout(400)
     ok('admin PIN set',pg.evaluate("JSON.parse(localStorage.mw_admin).lock===true"))
+    ok('v15: recovery code shown once after setting PIN',pg.locator('#arc').count()==1 and len(pg.inner_text('#arc').strip())==14); pg.click('#arok'); pg.wait_for_timeout(300)
     pg.click('#plk'); pg.wait_for_timeout(300); pg.goto(U+'#/cms'); pg.wait_for_timeout(300); ok('locked admin shows PIN gate',pg.locator('#apin').count()==1)
     pg.fill('#apin','9999'); pg.click('#ago'); pg.wait_for_timeout(300); ok('wrong PIN refused','غير صحيح' in pg.inner_text('#aerr'))
     pg.goto(U+'#/new/fault'); pg.wait_for_timeout(300); ok('locked: add-fault form also gated',pg.locator('#apin').count()==1)
@@ -135,7 +137,7 @@ with sync_playwright() as p:
     # ---- performance
     t0=time.time(); pg.goto(U+'#/'); pg.wait_for_selector('.tile'); tl=time.time()-t0; ok('home renders fast (%.2fs < 2s)'%tl,tl<2)
     t0=time.time(); pg.goto(U+'#/kit/circuit/ckt-nofrost'); pg.wait_for_selector('#cks .comp'); tc=time.time()-t0; ok('simulator opens fast (%.2fs < 2s)'%tc,tc<2)
-    sz=pg.evaluate("performance.getEntriesByType('resource').filter(r=>/\\.js$/.test(r.name)&&!/compressors-base/.test(r.name)).reduce((s,r)=>s+(r.decodedBodySize||0),0)"); ok('app JS (without compressor DB) under 600 KB (%d KB)'%(sz//1024),sz<600*1024)
+    sz=pg.evaluate("performance.getEntriesByType('resource').filter(r=>/\\.js$/.test(r.name)&&!/compressors-base/.test(r.name)).reduce((s,r)=>s+(r.decodedBodySize||0),0)"); ok('app JS (without compressor DB) under 720 KB (%d KB) — v15: +40KB شرح المبتدئ/القاموس'%(sz//1024),sz<720*1024)
     # ---- desktop layout
     ctx3=b.new_context(viewport={'width':1280,'height':860}); d3=ctx3.new_page(); d3.on('pageerror',lambda e:errs.append('DESK '+A(e)))
     for r in ['#/','#/kit','#/kit/circuit/ckt-ac','#/cms','#/cms/flows/fridge-no-cool','#/kit/cycle']:

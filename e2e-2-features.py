@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+import e2e_fixture  # v15: الإدارة مقفولة افتراضيًا
 import json,io
 from PIL import Image
 A=lambda s:str(s).encode('ascii','replace').decode()

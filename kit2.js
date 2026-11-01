@@ -1,5 +1,14 @@
 /* حقيبة الفني (2): مكتبة المكونات، حقائب الأجهزة، مساعد التشخيص، إدارة البيانات والمكتبات */
-(function(g){"use strict";
+(function(g){
+/* v15: تحذير سلامة لكل خطوة تشخيص يُستنتج من نص الخطوة نفسها ويظهر «قبل» الخطوة:
+   قياس جهد/تيار على الحي، ضغط فريون، مكثف، أو قياس مقاومة/استمرارية (لازم فصل). */
+function stepSafe(n,end){if(end||!g.KG)return"";const t=[n.text,n.measure,n.points,n.expected].filter(Boolean).join(" "),S=KG.SAFETY,k=[];
+ if(/مقاومة|استمرارية|أوم|Ω|\bOL\b|الملفات|ملف/.test(t))k.push(["elec","افصل الكهرباء قبل قياس المقاومة أو الاستمرارية."]);
+ if(/جهد|فولت|\bV\b|AC|تيار|كلامب|أمبير/.test(t)&&!/افصل/.test(t))k.push(["live",S.live[1]]);
+ if(/مكثف/.test(t))k.push(["cap",S.cap[1]]);
+ if(/ضغط|مانومتر|مانيفولد|فريون|شحن/.test(t))k.push(["press",S.press[1]]);
+ return k.length?`<div class="kg-safe" role="alert"><b>⚠️ قبل الخطوة دي</b>${k.map(([c,m])=>`<p><b>${E(S[c][0])}:</b> ${E(m)}</p>`).join("")}</div>`:""}
+"use strict";
 const K=g.KIT,{F,SEL,nv,KV,FLAG,PEND,ERR,ABOUT,L1,CLSCHIP,SRCL,out,fx,reg,$$,all}=K._,E=s=>MR.e(s),st=()=>MR.makeStore(localStorage);
 const toolLink=t=>{if(!t)return"";if(t.startsWith("comp:"))return`<a class="chip chip-btn" href="#/kit/components/${t.slice(5)}">🔩 افتح المكون</a>`;if(t.startsWith("diag:"))return`<a class="chip chip-btn" href="#/kit/diag/${t.slice(5)}">🩺 مسار التشخيص</a>`;if(t.startsWith("ckt-"))return`<a class="chip chip-btn" href="#/kit/circuit/${t}">🔌 افتح في المحاكي</a>`;const x=K.tool(t);return x?`<a class="chip chip-btn" href="#/kit/${x.id}">${x.ic} ${E(x.t)}</a>`:""};
 /* ---- مكتبة المكونات ---- */
@@ -32,7 +41,7 @@ reg("diag","🩺","مساعد التشخيص الفني","شجرة قرارات:
  const ev=ED.evidence(f,DS.ch),evH=ev.length?`<section class="sec"><h3><i>⚖️</i>الاحتمالات حسب الأدلة حتى الآن</h3>${ev.map(x=>`<div class="kv"><span>${E(x.h)}</span><b>${Math.round(x.share*100)}% — ثقة ${E(ED.CONF[x.conf])}</b></div>`).join("")}<p class="as">ترتيب نسبي من إجاباتك فقط، وليس احتمالًا إحصائيًا. لا تجزم بالعطل قبل إكمال الاختبارات.</p></section>`:"";
  el.innerHTML=`<div class="dbar"><a class="back" href="#/kit/diag">← المسارات</a><div class="dact"><button class="secondary" id="d0" type="button">↺ من البداية</button></div></div><div class="notice"><b>⚠️ السلامة:</b> ${E(f.safety)}</div>
  <div class="hero"><h2>${E(f.title)}</h2><div class="chips"><span class="chip">الخطوة ${s.depth}</span>${f.builtin?'<span class="chip st-warn">تقدير هندسي — منطق فحص عام</span>':CLSCHIP(f.srcClass||f.status)}</div></div>
- <section class="sec"><h3><i>${s.end?"🏁":n.input?"📏":"❓"}</i>${E(n.text)}</h3>${n.measure?`<p><b>القياس:</b> ${E(n.measure)}</p>`:""}${n.points?`<p><b>نقاط القياس:</b> ${E(n.points)}</p>`:""}${n.expected?`<p><b>النتيجة المتوقعة:</b> ${E(n.expected)}</p>`:""}${n.ref?`<p><b>القيمة المرجعية:</b> ${E(n.ref)}</p>`:""}${n.ifDiff?`<p><b>تفسير الاختلاف:</b> ${E(n.ifDiff)}</p>`:""}${n.warn?`<div class="notice">${E(n.warn)}</div>`:""}
+ <section class="sec">${stepSafe(n,s.end)}<h3><i>${s.end?"🏁":n.input?"📏":"❓"}</i>${E(n.text)}</h3>${n.measure?`<p><b>القياس:</b> ${E(n.measure)}</p>`:""}${n.points?`<p><b>نقاط القياس:</b> ${E(n.points)}</p>`:""}${n.expected?`<p><b>النتيجة المتوقعة:</b> ${E(n.expected)}</p>`:""}${n.ref?`<p><b>القيمة المرجعية:</b> ${E(n.ref)}</p>`:""}${n.ifDiff?`<p><b>تفسير الاختلاف:</b> ${E(n.ifDiff)}</p>`:""}${n.warn?`<div class="notice">${E(n.warn)}</div>`:""}
  ${n.input?`<div class="pick"><div class="fgrid">${F("dgv",E(n.input.label),E(n.input.unit),"","","text")}${n.input.refLabel||n.input.ref!=null?F("dgr",E(n.input.refLabel||"القيمة المرجعية"),E(n.input.unit),"",n.input.ref!=null?n.input.ref:""):""}</div><div id="dgo"></div><button class="primary diag-opt" id="dgn" type="button" disabled>متابعة ←</button><details class="about"><summary>القواعد المستخدمة</summary><div class="about-b">${n.rules.map(r=>`<div>• ${E(r.t||r.op)}</div>`).join("")}</div></details></div>`:""}
  ${n.result?FLAG(s.end?"und":"info",n.result):""}${n.tests?`<p><b>الاختبارات المقترحة:</b> ${E(n.tests)}</p>`:""}${n.poss?`<p><b>الاحتمالات:</b></p><ul class="steps2">${n.poss.map(p=>`<li>${E(p)}</li>`).join("")}</ul>`:""}${n.conf?`<p><b>درجة الثقة:</b> ${E(ED.CONF[n.conf])}</p>`:""}${n.tool?`<div class="chips">${toolLink(n.tool)}</div>`:""}
  ${(n.options||[]).map((o,i)=>`<button class="secondary diag-opt" data-do="${i}" type="button">${E(o.t)}</button>`).join("")}${s.end?'<p class="mu">نهاية المسار. إن لم يُحل العطل فاستكمل بالمراجع الفنية للموديل ولا تجزم بالعطل من خطوة واحدة.</p>':""}</section>${evH}
