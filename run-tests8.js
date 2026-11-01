@@ -31,6 +31,16 @@ t("تنظيف المصدر القديم: النسخ القديمة ليها مق
   assert.deepEqual(P.orphans, [{ id: "o3", manual: true }]);
   const d = DUP.faultDups(L); assert(d.near.some(g => g.ids.includes("o1") && g.ids.includes("n1")), "الكاشف لازم يلاقي «تورنيدو» = «تورنيدو (Tornado)»");
 });
+t("بيانات تطبيق الورشة: «غسالات» = «غسالة»، «توشيبا العربي» = توشيبا، «أمامي أوتوماتيك» = تحميل أمامي؛ وزانوسي (مصدر تاني) ما يتلمسش", () => {
+  assert.equal(DUP.devKey("غسالات"), DUP.devKey("غسالة")); assert.equal(DUP.brandKey("توشيبا العربي"), DUP.brandKey("توشيبا (Toshiba)")); assert.equal(DUP.catKey("أمامي أوتوماتيك"), DUP.catKey("تحميل أمامي"));
+  const R = "ELARABY — دليل، ص 1", L = [
+    { id: "n1", deviceType: "غسالة", brand: "شارب (Sharp)", category: "تحميل أمامي", model: "موديلات شارب وتورنيدو فول أوتوماتيك", code: "E23", srcRef: R },
+    { id: "n2", deviceType: "غسالة", brand: "توشيبا (Toshiba)", category: "تحميل علوي", model: "AEW–SD, DC, DG", code: "E8 (E81, E83:E86)", srcRef: R },
+    { id: "o1", deviceType: "غسالات", brand: "شارب", category: "أمامي أوتوماتيك", code: "E23", source: "imported" },
+    { id: "o2", deviceType: "غسالات", brand: "توشيبا العربي", category: "فوق أوتوماتيك", model: "AEW-SD, DC, DG", code: "E8", source: "imported" },
+    { id: "o3", deviceType: "غسالات", brand: "زانوسي", category: "أمامي أوتوماتيك", code: "E23", source: "imported" }];
+  const P = DUP.sourcePlan(L, "ELARABY — دليل"); assert.deepEqual(P.replace.map(x => x.id + ">" + x.to).sort(), ["o1>n1", "o2>n2"]); assert.equal(P.orphans.length, 0);
+});
 t("الشبيه: E01 ≈ E1 (أصفار بادئة) ومعاه السبب، والتيست مود منفصل عن الأكواد", () => { const d = DUP.faultDups(FA); const n = d.near.find(g => g.ids.includes("f3")); assert(n && n.ids.includes("f1")); assert(d.exact.some(g => g.ids.join() == "t1,t2")); assert(!d.exact.concat(d.near).some(g => g.ids.includes("f4"))); });
 t("nearKey: O ≈ 0 و I/L ≈ 1 (حتى في آخر الموديل) والأصفار البادئة، ولا يخلط الأرقام المختلفة", () => { assert.equal(DUP.nearKey("E0l"), DUP.nearKey("E01")); assert.equal(DUP.nearKey("GL6OAA"), DUP.nearKey("GL60AA")); assert.equal(DUP.nearKey("QB57C88RAOO"), DUP.nearKey("QB57C88RA00")); assert.notEqual(DUP.nearKey("E1"), DUP.nearKey("E2")); assert.notEqual(DUP.nearKey("QB57C88RA00"), DUP.nearKey("QB57C88RA01")); });
 t("الكباسات: «NEK 6210 Z» = «NEK6210Z» لنفس الماركة، وموجود في القاعدة يتعلّم", () => { const cu = [{ id: "c1", brand: "امبراكو", rec: { model: "NEK6210Z" } }, { id: "c2", brand: "امبراكو", rec: { model: "NEK 6210 Z" } }, { id: "c3", brand: "باناسونيك", rec: { model: "QB51C74GAW5" } }, { id: "c4", brand: "دانفوس", rec: { model: "NEK6210Z" } }]; const d = DUP.compDups(cu, { "باناسونيك": [{ model: "QB51C74GAW5" }] }); assert.deepEqual(d.exact.map(g => g.ids), [["c1", "c2"]]); assert(d.inBase.some(g => g.ids[0] == "c3")); });

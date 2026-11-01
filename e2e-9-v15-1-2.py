@@ -18,7 +18,7 @@ NEW = {"faultCodes": [
 NP = os.path.join(TMP, 'new.json'); json.dump(NEW, open(NP, 'w'), ensure_ascii=False)
 SEED = """()=>{localStorage.mw_db=JSON.stringify({ver:3,faults:[
   {id:'o1',deviceType:'غسالة',brand:'تورنيدو',category:'فوق أوتوماتيك',model:'TWT-TLD',code:'E-1',title:'صرف',source:'imported',imgs:['img_o1']},
-  {id:'o2',deviceType:'غسالة',brand:'توشيبا',model:'AEW-9790',code:'E2',title:'باب',source:'imported'},
+  {id:'o2',deviceType:'غسالات',brand:'توشيبا العربي',model:'AEW-9790',code:'E2',title:'باب',source:'imported'},
   {id:'o3',deviceType:'غسالة',brand:'تورنيدو',code:'E77',title:'قديم من غير مقابل',source:'imported'},
   {id:'o4',deviceType:'غسالة',brand:'تورنيدو',code:'E88',title:'إضافة يدوية',source:'manual'},
   {id:'o5',deviceType:'غسالة',brand:'إل جي (LG)',code:'E1',title:'ماركة تانية'}],custom:[]});

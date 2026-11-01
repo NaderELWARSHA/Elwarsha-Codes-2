@@ -18,7 +18,10 @@
   /* + أسماء معروفة: «تورنيدو» لوحدها = «تورنيدو (Tornado)» = «Tornado» (بتتعلم من قائمة الماركات ومن البيانات نفسها) */
   const BALIAS = new Map();
   function learnBrands(list) { (list || []).forEach(b => { const m = String(b ?? "").match(/^(.*?)\(([^)]+)\)/); if (m && normAr(m[1]) && normAr(m[2])) BALIAS.set(normAr(m[1]), normAr(m[2])); }); return BALIAS.size; }
-  const brandKey = b => { const s = String(b ?? ""), m = s.match(/\(([^)]+)\)/); if (m) return normAr(m[1]); const n = normAr(s); return BALIAS.get(n) || n; };
+  /* «توشيبا العربي» = توشيبا: لو الاسم كله مش معروف، أول كلمة معروفة تكفي */
+  const brandKey = b => { const s = String(b ?? ""), m = s.match(/\(([^)]+)\)/); if (m) return normAr(m[1]); const n = normAr(s); if (BALIAS.has(n)) return BALIAS.get(n); const w = normAr(s.trim().split(/\s+/)[0]); return BALIAS.get(w) || n; };
+  /* نوع الجهاز: «غسالات» = «غسالة» (جمع/مفرد) */
+  const devKey = d => { const n = normAr(d); return n.replace(/ات$/, "ه").replace(/^(مكيف|تكييفات?)$/, "تكييف"); };
 
   /* كود/موديل «قريب» (للمقارنة فقط): O→0 ، I/L→1 ، وحذف الأصفار البادئة في كل مجموعة أرقام */
   const nearKey = v => normAr(v).toUpperCase()
@@ -40,12 +43,12 @@
   /* نفس مفتاح الاستيراد في sync.js */
   const faultKey = r => [r.kind === "test" ? "test" : "", r.deviceType, r.brand, r.category, r.model, r.kind === "test" ? r.title : r.code].map(normAr).join("|");
   /* مفتاح الكاشف: زي مفتاح الاستيراد بس الماركة بـ brandKey («إل جي (LG)» = «LG») */
-  const faultKeyB = r => [r.kind === "test" ? "test" : "", normAr(r.deviceType), brandKey(r.brand), normAr(r.category), normAr(r.model), normAr(r.kind === "test" ? r.title : r.code)].join("|");
+  const faultKeyB = r => [r.kind === "test" ? "test" : "", devKey(r.deviceType), brandKey(r.brand), normAr(r.category), normAr(r.model), normAr(r.kind === "test" ? r.title : r.code)].join("|");
   /* الشبيه لازم يكون لنفس الجهاز: نوع الجهاز والفئة والموديل متساويين أو واحد فيهم فاضي
      (E1 في موديل 8 كيلو و E01 في موديل فول أوتوماتيك تاني مش تكرار — دي أكواد موديلات مختلفة) */
   const nearCompat = (a, b) => {
     a = a || {}; b = b || {}; const dt = (x, y) => !x || !y || x === y;
-    if (!dt(normAr(a.deviceType), normAr(b.deviceType)) || !modelCompat(a.model, b.model)) return false;
+    if (!dt(devKey(a.deviceType), devKey(b.deviceType)) || !modelCompat(a.model, b.model)) return false;
     return (normAr(a.model) && normAr(b.model)) || dt(catKey(a.category), catKey(b.category)); // لو الموديلين متوافقين الفئة مش شرط (ممكن مكتوبة بأسماء مختلفة)
   };
   const nearKeyF = r => [r.kind === "test" ? "test" : "", brandKey(r.brand), r.kind === "test" ? nearKey(r.title) : nearCode(r.code)].join("|");
@@ -61,12 +64,12 @@
   function sourcePlan(faults, src) {
     const L = faults || [], NEW = L.filter(r => srcOf(r) === src), OLD = L.filter(r => srcOf(r) !== src);
     const idx = new Map(); NEW.forEach(r => { const k = nearKeyF(r); if (!idx.has(k)) idx.set(k, []); idx.get(k).push(r); });
-    const cov = new Set(NEW.map(r => brandKey(r.brand) + "|" + normAr(r.deviceType)));
+    const cov = new Set(NEW.map(r => brandKey(r.brand) + "|" + devKey(r.deviceType)));
     const replace = [], orphans = [];
     OLD.forEach(r => {
       const to = (idx.get(nearKeyF(r)) || []).filter(n => nearCompat(n, r));
       if (to.length) return replace.push({ id: r.id, to: to.map(n => n.id) });
-      const b = brandKey(r.brand), d = normAr(r.deviceType);
+      const b = brandKey(r.brand), d = devKey(r.deviceType);
       if (d ? cov.has(b + "|" + d) : [...cov].some(k => k.startsWith(b + "|"))) orphans.push({ id: r.id, manual: r.source === "manual" });
     });
     return { src, keep: NEW.length, replace, orphans };
@@ -135,7 +138,7 @@
   /* تحويل الروابط المحفوظة (مفضلة/سجل تصفح) من السجل المحذوف للباقي */
   function remapLinks(list, from, to) { return (list || []).map(x => x && x.h === from ? { ...x, h: to } : x).filter((x, i, a) => !x || a.findIndex(y => y && x && y.h === x.h) === i); }
 
-  const api = { normAr, brandKey, learnBrands, codeHead, catKey, modelCompat, srcOf, sources, sourcePlan, nearKey, nearKeyF, nearCompat, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
+  const api = { normAr, brandKey, devKey, learnBrands, codeHead, catKey, modelCompat, srcOf, sources, sourcePlan, nearKey, nearKeyF, nearCompat, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
   try { const Y = g.SY || (typeof require == "function" ? require("./sync.js") : null); if (Y && Y.SEED) learnBrands(Y.SEED.brand); } catch (e) { /* القائمة اختيارية */ }
   if (typeof module == "object" && module.exports) module.exports = api; else g.DUP = api;
 })(typeof window != "undefined" ? window : globalThis);
