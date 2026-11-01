@@ -180,14 +180,14 @@
         out.push({ ...x, brand, rec, st: "new", why: "" });
       });
     } else {
-      const fk = new Map(D.faults.map(r => [DUP.faultKeyB(r), r])), fnear = new Map(D.faults.map(r => [[r.kind == "test" ? "test" : "", DUP.brandKey(r.brand), DUP.nearKey(r.kind == "test" ? r.title : r.code)].join("|"), r]));
+      const fk = new Map(D.faults.map(r => [DUP.faultKeyB(r), r])), fnear = new Map(); D.faults.forEach(r => { const q = DUP.nearKeyF(r); if (!fnear.has(q)) fnear.set(q, []); fnear.get(q).push(r); });
       IMP.recs.forEach(x => {
         const rec = Y.cleanFault(x.rec); if (!rec) return out.push({ ...x, st: "bad", why: "ناقص (الكود مطلوب)" });
-        const k = DUP.faultKeyB(rec), nk = [rec.kind == "test" ? "test" : "", DUP.brandKey(rec.brand), DUP.nearKey(rec.kind == "test" ? rec.title : rec.code)].join("|");
+        const k = DUP.faultKeyB(rec), nk = DUP.nearKeyF(rec);
         if (seen.has(k)) return out.push({ ...x, rec, st: "file", why: "مكرر داخل الملف (صف " + seen.get(k) + ")" }); seen.set(k, x.row);
-        const sn = seenN.get(nk); if (sn) return out.push({ ...x, rec, st: "near", why: "شبيه بصف " + sn + " في نفس الملف" }); seenN.set(nk, x.row);
+        const sn = (seenN.get(nk) || []).find(o => DUP.nearCompat(o.rec, rec)); if (sn) return out.push({ ...x, rec, st: "near", why: "شبيه بصف " + sn.row + " في نفس الملف" }); if (!seenN.has(nk)) seenN.set(nk, []); seenN.get(nk).push({ row: x.row, rec });
         const ex = fk.get(k); if (ex) { const f = DUP.fillMissing(ex, rec, rec.kind == "test" ? Y.TK : Y.FK); return out.push({ ...x, rec, st: f.filled.length ? "fill" : "same", target: ex.id, filled: f.filled, differ: f.differ, merged: f.rec, why: f.filled.length ? "موجود — هيكمّل: " + f.filled.map(lab).join("، ") : "موجود ومطابق" }); }
-        const n = fnear.get(nk); if (n) return out.push({ ...x, rec, st: "near", why: "شبيه بـ: " + DUP.faultLabel(n) });
+        const n = (fnear.get(nk) || []).find(r => DUP.nearCompat(r, rec)); if (n) return out.push({ ...x, rec, st: "near", why: "شبيه بـ: " + DUP.faultLabel(n) });
         out.push({ ...x, rec, st: "new", why: "" });
       });
     }

@@ -26,6 +26,10 @@
   const faultKey = r => [r.kind === "test" ? "test" : "", r.deviceType, r.brand, r.category, r.model, r.kind === "test" ? r.title : r.code].map(normAr).join("|");
   /* مفتاح الكاشف: زي مفتاح الاستيراد بس الماركة بـ brandKey («إل جي (LG)» = «LG») */
   const faultKeyB = r => [r.kind === "test" ? "test" : "", normAr(r.deviceType), brandKey(r.brand), normAr(r.category), normAr(r.model), normAr(r.kind === "test" ? r.title : r.code)].join("|");
+  /* الشبيه لازم يكون لنفس الجهاز: نوع الجهاز والفئة والموديل متساويين أو واحد فيهم فاضي
+     (E1 في موديل 8 كيلو و E01 في موديل فول أوتوماتيك تاني مش تكرار — دي أكواد موديلات مختلفة) */
+  const nearCompat = (a, b) => ["deviceType", "category", "model"].every(f => { const x = normAr(a && a[f]), y = normAr(b && b[f]); return !x || !y || x === y; });
+  const nearKeyF = r => [r.kind === "test" ? "test" : "", brandKey(r.brand), nearKey(r.kind === "test" ? r.title : r.code)].join("|");
   const faultLabel = r => (r.kind === "test" ? "تيست مود: " + (r.title || "") : (r.code || "")) + " — " + (r.brand || "كل الماركات") + (r.deviceType ? " · " + r.deviceType : "") + (r.model ? " · " + r.model : "");
 
   /* تجميع: يرجع مجموعات مؤكدة ومجموعات شبيهة (كل مجموعة ≥ 2) بدون تكرار نفس الزوج */
@@ -36,7 +40,8 @@
     const exact = groupBy(L, faultKeyB).map(ix => ({ type: "exact", ids: ix.map(i => L[i].id), why: "نفس الكود والماركة ونوع الجهاز والفئة والموديل (بعد توحيد الكتابة)" }));
     const inExact = new Set(exact.flatMap(g => g.ids.join("|")));
     const near = [];
-    groupBy(L, r => [r.kind === "test" ? "test" : "", brandKey(r.brand), nearKey(r.kind === "test" ? r.title : r.code)].join("|")).forEach(ix => {
+    groupBy(L, nearKeyF).forEach(ix => {
+      ix = ix.filter(i => ix.some(j => j !== i && nearCompat(L[i], L[j]))); if (ix.length < 2) return;
       const ids = ix.map(i => L[i].id); if (inExact.has(ids.join("|"))) return;
       const ex = exact.find(g => g.ids.every(id => ids.includes(id))); if (ex && ex.ids.length == ids.length) return;
       const recs = ix.map(i => L[i]), sameCode = new Set(recs.map(r => normAr(r.kind === "test" ? r.title : r.code))).size == 1;
@@ -89,6 +94,6 @@
   /* تحويل الروابط المحفوظة (مفضلة/سجل تصفح) من السجل المحذوف للباقي */
   function remapLinks(list, from, to) { return (list || []).map(x => x && x.h === from ? { ...x, h: to } : x).filter((x, i, a) => !x || a.findIndex(y => y && x && y.h === x.h) === i); }
 
-  const api = { normAr, brandKey, nearKey, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
+  const api = { normAr, brandKey, nearKey, nearKeyF, nearCompat, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
   if (typeof module == "object" && module.exports) module.exports = api; else g.DUP = api;
 })(typeof window != "undefined" ? window : globalThis);
