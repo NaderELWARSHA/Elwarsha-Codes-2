@@ -98,7 +98,7 @@ with sync_playwright() as p:
     bj['attachments'][0]['data']='<script>alert(1)</script>'; pg.goto(U+'#/admin'); pg.wait_for_timeout(300)
     pg.set_input_files('#rf',{'name':'b2.json','mimeType':'application/json','buffer':json.dumps(bj).encode()}); pg.wait_for_timeout(600); ok('corrupt attachment backup rejected, data intact',pg.evaluate("JSON.parse(localStorage.mw_db).faults.length")==1)
     # deleting record sweeps its attachments
-    pg.goto(U+'#/fault/f1'); pg.wait_for_timeout(300); pg.click('#del'); pg.wait_for_timeout(1200); ok('deleting record removes orphan attachments',pg.evaluate("ATT.usage().then(x=>x.count)")==0)
+    pg.goto(U+'#/fault/f1'); pg.wait_for_timeout(300); pg.click('details.more-del summary'); pg.click('#del'); pg.wait_for_timeout(1200); ok('deleting record removes orphan attachments',pg.evaluate("ATT.usage().then(x=>x.count)")==0)
     # --- compressors: graded alternatives, refrigerant filter, compare copy + compat row, debug timing
     pg.goto(U+'#/comps'); pg.wait_for_selector('#q',timeout=20000); pg.fill('#q','GL45AA'); pg.wait_for_timeout(500); pg.locator('a.cc-link').first.click(); pg.wait_for_timeout(600)
     ok('compressor detail: collapsed glossary "ما معنى هذه القيم؟"',pg.locator('details.about summary',has_text='ما معنى هذه القيم').count()==1 and pg.locator('details.about[open]').count()==0)

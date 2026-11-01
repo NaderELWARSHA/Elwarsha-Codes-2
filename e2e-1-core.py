@@ -39,7 +39,7 @@ with sync_playwright() as p:
     pg.goto(U+'#/faults'); pg.fill('#q','e7'); pg.wait_for_timeout(300); ok('XSS not executed',pg.evaluate("window.PWN")is None and pg.locator('.rc').count()==1)
     pg.goto(U+'#/new/fault'); pg.select_option('select[name=brand]','LG'); pg.fill('input[name=code]','E9'); pg.fill('input[name=title]','وصف'); pg.click('#f button'); pg.wait_for_timeout(300); ok('add fault',n()==7)
     pg.goto(U+'#/fault/'+pg.evaluate("JSON.parse(localStorage.mw_db).faults.slice(-1)[0].id")); pg.wait_for_timeout(200); pg.click('a[href^="#/edit"]'); pg.fill('input[name=title]','معدّل'); pg.click('#f button'); pg.wait_for_timeout(300); ok('edit',pg.evaluate("JSON.parse(localStorage.mw_db).faults.some(f=>f.title=='معدّل')"))
-    pg.goto(U+'#/fault/'+pg.evaluate("JSON.parse(localStorage.mw_db).faults.slice(-1)[0].id")); pg.wait_for_timeout(200); pg.click('#del'); pg.wait_for_timeout(300); ok('delete',n()==6)
+    pg.goto(U+'#/fault/'+pg.evaluate("JSON.parse(localStorage.mw_db).faults.slice(-1)[0].id")); pg.wait_for_timeout(200); pg.click('details.more-del summary'); pg.click('#del'); pg.wait_for_timeout(300); ok('delete',n()==6)
     # ---- choosers / managed lists / suggestions ----
     pg.goto(U+'#/new/fault'); pg.wait_for_timeout(600)
     dts=pg.locator('select[name=deviceType] option').all_inner_texts(); ok('device types seeded: washer/fridge/AC (no half-auto default)',all(x in dts for x in ['غسالة','ثلاجة','تكييف']) and not any('نصف' in x for x in dts))

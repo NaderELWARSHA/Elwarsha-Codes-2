@@ -124,7 +124,7 @@ with sync_playwright() as p:
     pg.fill('#glq', 'zzzz'); pg.wait_for_timeout(200); ok('[20] no-result state gives a next step', pg.locator('.empty').count() == 1 and 'البحث العام' in pg.inner_text('#gll'))
     # [19] الرئيسية
     pg.goto(U); pg.wait_for_timeout(400)
-    ok('[19] home: «حسب العطل» (8 symptoms) before tiles, «ابدأ من هنا», «الأكثر استخدامًا»', pg.locator('.kg-symb').count() == 8 and pg.locator('.kg-path li').count() == 5 and pg.evaluate("document.querySelector('.kg-sym').getBoundingClientRect().top<document.querySelector('.tiles').getBoundingClientRect().top"))
+    ok('[19] home: «حسب العطل» (8 symptoms) before tiles, «ابدأ من هنا», «الأكثر استخدامًا»', pg.locator('.kg-symb').count() == 8 and pg.locator('.kg-path li').count() == 6 and pg.evaluate("document.querySelector('.kg-sym').getBoundingClientRect().top<document.querySelector('.tiles').getBoundingClientRect().top"))
     hrefs = pg.evaluate("[...document.querySelectorAll('.kg-symb')].map(a=>a.getAttribute('href'))"); badf = []
     for h in hrefs:
         pg.goto(U + h); pg.wait_for_timeout(200)

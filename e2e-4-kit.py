@@ -54,7 +54,7 @@ with sync_playwright() as p:
     pg.locator('#cks [data-c="S1"]').click(); pg.wait_for_timeout(250); pg.click('[data-tab="err"]'); pg.wait_for_timeout(150); ok('simulator: tap switch toggles -> open path detected with fix',('مقطوع' in pg.inner_text('#ckpanel')) and ('الإصلاح' in pg.inner_text('#ckpanel')) and pg.locator('#cks .wire.on').count()==0)
     pg.locator('#cks [data-c="S1"]').click(); pg.wait_for_timeout(200)
     nw0=pg.evaluate("JSON.parse(sessionStorage.mw_ck_cur).ck.wires.length")
-    pg.click('#cksim'); pg.click('[data-tab="lib"]'); pg.click('[data-add="lamp"]'); pg.wait_for_timeout(200); ok('palette adds component + props panel',pg.locator('#cks [data-c="LP1"]').count()==1 and pg.locator('#ckpanel input[data-pp="P"]').count()==1)
+    pg.click('#cksim'); pg.click('[data-tab="lib"]'); pg.click('[data-add="lamp"]'); pg.wait_for_timeout(200); ok('palette adds component; library stays open; selection bar opens its properties',pg.locator('#cks [data-c="LP1"]').count()==1 and pg.locator('#ckpanel [data-add]').count()>10 and 'LP1' in pg.inner_text('#cksel')); pg.click('#cksel [data-sb="pp"]'); pg.wait_for_timeout(150); ok('properties from selection bar',pg.locator('#ckpanel input[data-pp="P"]').count()==1)
     pg.click('[data-md="wire"]'); pg.wait_for_timeout(100)
     def tap(k):
         pg.locator('#cks [data-t="%s"] circle'%k).first.evaluate("e=>e.scrollIntoView({block:'center'})"); box=pg.locator('#cks [data-t="%s"] circle'%k).first.bounding_box(); pg.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2); pg.wait_for_timeout(120)
