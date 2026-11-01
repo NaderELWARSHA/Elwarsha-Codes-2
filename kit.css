@@ -167,3 +167,4 @@ details.node{padding:6px 10px}details.node>summary{cursor:pointer;padding:6px 0}
 #dupw .dup-hard{border:2px solid var(--bad,#b3261e)}
 #dupw a{display:inline-flex;min-height:36px;align-items:center}
 .dup-g details.more summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text-muted)}
+.im-opts{margin:8px 0}.im-opts label{display:flex;flex-direction:column;gap:4px;min-width:0}.im-opts select{min-height:44px;max-width:100%}

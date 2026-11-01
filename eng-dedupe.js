@@ -12,15 +12,30 @@
   const normAr = v => String(v ?? "").toLowerCase().normalize("NFKC")
     .replace(/[ً-ٰٟ]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ـ/g, "")
     .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0))
-    .replace(/[\s\-_./\\]+/g, "").trim();
+    .replace(/[\s\-_./\\–—−‐]+/g, "").trim();
 
   /* الماركة: «إل جي (LG)» و«LG» و«ال جى» تبقى واحدة لو فيها اسم لاتيني بين قوسين */
-  const brandKey = b => { const s = String(b ?? ""), m = s.match(/\(([^)]+)\)/); return normAr(m ? m[1] : s); };
+  /* + أسماء معروفة: «تورنيدو» لوحدها = «تورنيدو (Tornado)» = «Tornado» (بتتعلم من قائمة الماركات ومن البيانات نفسها) */
+  const BALIAS = new Map();
+  function learnBrands(list) { (list || []).forEach(b => { const m = String(b ?? "").match(/^(.*?)\(([^)]+)\)/); if (m && normAr(m[1]) && normAr(m[2])) BALIAS.set(normAr(m[1]), normAr(m[2])); }); return BALIAS.size; }
+  const brandKey = b => { const s = String(b ?? ""), m = s.match(/\(([^)]+)\)/); if (m) return normAr(m[1]); const n = normAr(s); return BALIAS.get(n) || n; };
 
   /* كود/موديل «قريب» (للمقارنة فقط): O→0 ، I/L→1 ، وحذف الأصفار البادئة في كل مجموعة أرقام */
   const nearKey = v => normAr(v).toUpperCase()
     .replace(/O/g, "0").replace(/[IL]/g, "1") // للمقارنة بس: O↔0 و I/L↔1 أشهر لخبطة في أرقام الموديلات
     .replace(/(^|[^0-9])0+(?=\d)/g, "$1");
+
+  /* رأس الكود: «E2 (E21, E23)» → E2 ، «Eb-8 / E-b8» → Eb-8 (للأكواد اللاتيني بس؛ الشكاوى العربي زي ما هي) */
+  const codeHead = c => { const s = String(c ?? "").trim(); return /^[A-Za-z0-9]/.test(s) ? s.split(/\s*[(/،,]\s*|\s+/)[0] : s; };
+  const nearCode = c => nearKey(codeHead(c)).replace(/:/g, "");
+  /* الفئة بأسمائها الشائعة: فول أوتوماتيك = تحميل أمامي ، فوق أوتوماتيك = تحميل علوي */
+  const catKey = c => { const n = normAr(c); if (!n) return ""; if (/امامي|فول|front/.test(n)) return "front"; if (/علوي|فوق|top/.test(n)) return "top"; if (/نصف|هاف|half|twin/.test(n)) return "half"; if (/اطباق|dish/.test(n)) return "dish"; return n; };
+  /* الموديل متوافق: نفس الكتابة، أو واحد جوه التاني (TWT-TLD ⊂ TWT–TLD (DDM))، أو رقم موديل مشترك (AEW-9790 ∈ «AEW–9770, 9790, …») */
+  const mtoks = m => String(m ?? "").split(/[,،/&+()]|\s+و\s+/).map(normAr).filter(t => (t.match(/\d/g) || []).length >= 3);
+  function modelCompat(a, b) {
+    const x = normAr(a), y = normAr(b); if (!x || !y || x === y || x.includes(y) || y.includes(x)) return true;
+    const A = mtoks(a), B = mtoks(b); return A.some(p => B.some(q => p.includes(q) || q.includes(p)));
+  }
 
   /* نفس مفتاح الاستيراد في sync.js */
   const faultKey = r => [r.kind === "test" ? "test" : "", r.deviceType, r.brand, r.category, r.model, r.kind === "test" ? r.title : r.code].map(normAr).join("|");
@@ -28,8 +43,34 @@
   const faultKeyB = r => [r.kind === "test" ? "test" : "", normAr(r.deviceType), brandKey(r.brand), normAr(r.category), normAr(r.model), normAr(r.kind === "test" ? r.title : r.code)].join("|");
   /* الشبيه لازم يكون لنفس الجهاز: نوع الجهاز والفئة والموديل متساويين أو واحد فيهم فاضي
      (E1 في موديل 8 كيلو و E01 في موديل فول أوتوماتيك تاني مش تكرار — دي أكواد موديلات مختلفة) */
-  const nearCompat = (a, b) => ["deviceType", "category", "model"].every(f => { const x = normAr(a && a[f]), y = normAr(b && b[f]); return !x || !y || x === y; });
-  const nearKeyF = r => [r.kind === "test" ? "test" : "", brandKey(r.brand), nearKey(r.kind === "test" ? r.title : r.code)].join("|");
+  const nearCompat = (a, b) => {
+    a = a || {}; b = b || {}; const dt = (x, y) => !x || !y || x === y;
+    if (!dt(normAr(a.deviceType), normAr(b.deviceType)) || !modelCompat(a.model, b.model)) return false;
+    return (normAr(a.model) && normAr(b.model)) || dt(catKey(a.category), catKey(b.category)); // لو الموديلين متوافقين الفئة مش شرط (ممكن مكتوبة بأسماء مختلفة)
+  };
+  const nearKeyF = r => [r.kind === "test" ? "test" : "", brandKey(r.brand), r.kind === "test" ? nearKey(r.title) : nearCode(r.code)].join("|");
+
+  /* ---------------- تنظيف بيانات قديمة لما يتستورد مصدر أحدث ----------------
+     المصدر = srcRef من غير رقم الصفحة. السجلات اللي من مصدر تاني لنفس الماركة ونوع الجهاز:
+     replace = ليها نسخة في المصدر الجديد (نفس الكود/العنوان والجهاز متوافق) ، orphans = مالهاش مقابل (تتراجع بالعين) */
+  const srcOf = r => String((r && r.srcRef) || "").split(/[،,]\s*ص\.?\s*\d/)[0].trim();
+  function sources(faults) {
+    const m = new Map(); (faults || []).forEach(r => { const s = srcOf(r); if (!s) return; const o = m.get(s) || { src: s, n: 0, last: "" }; o.n++; const t = r.createdAt || r.updatedAt || ""; if (t > o.last) o.last = t; m.set(s, o); });
+    return [...m.values()].sort((a, b) => (b.last > a.last ? 1 : b.last < a.last ? -1 : b.n - a.n));
+  }
+  function sourcePlan(faults, src) {
+    const L = faults || [], NEW = L.filter(r => srcOf(r) === src), OLD = L.filter(r => srcOf(r) !== src);
+    const idx = new Map(); NEW.forEach(r => { const k = nearKeyF(r); if (!idx.has(k)) idx.set(k, []); idx.get(k).push(r); });
+    const cov = new Set(NEW.map(r => brandKey(r.brand) + "|" + normAr(r.deviceType)));
+    const replace = [], orphans = [];
+    OLD.forEach(r => {
+      const to = (idx.get(nearKeyF(r)) || []).filter(n => nearCompat(n, r));
+      if (to.length) return replace.push({ id: r.id, to: to.map(n => n.id) });
+      const b = brandKey(r.brand), d = normAr(r.deviceType);
+      if (d ? cov.has(b + "|" + d) : [...cov].some(k => k.startsWith(b + "|"))) orphans.push({ id: r.id, manual: r.source === "manual" });
+    });
+    return { src, keep: NEW.length, replace, orphans };
+  }
   const faultLabel = r => (r.kind === "test" ? "تيست مود: " + (r.title || "") : (r.code || "")) + " — " + (r.brand || "كل الماركات") + (r.deviceType ? " · " + r.deviceType : "") + (r.model ? " · " + r.model : "");
 
   /* تجميع: يرجع مجموعات مؤكدة ومجموعات شبيهة (كل مجموعة ≥ 2) بدون تكرار نفس الزوج */
@@ -94,6 +135,7 @@
   /* تحويل الروابط المحفوظة (مفضلة/سجل تصفح) من السجل المحذوف للباقي */
   function remapLinks(list, from, to) { return (list || []).map(x => x && x.h === from ? { ...x, h: to } : x).filter((x, i, a) => !x || a.findIndex(y => y && x && y.h === x.h) === i); }
 
-  const api = { normAr, brandKey, nearKey, nearKeyF, nearCompat, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
+  const api = { normAr, brandKey, learnBrands, codeHead, catKey, modelCompat, srcOf, sources, sourcePlan, nearKey, nearKeyF, nearCompat, faultKey, faultKeyB, faultLabel, faultDups, compDups, compare, defaultChoice, joinText, applyMerge, fillMissing, remapLinks, empty };
+  try { const Y = g.SY || (typeof require == "function" ? require("./sync.js") : null); if (Y && Y.SEED) learnBrands(Y.SEED.brand); } catch (e) { /* القائمة اختيارية */ }
   if (typeof module == "object" && module.exports) module.exports = api; else g.DUP = api;
 })(typeof window != "undefined" ? window : globalThis);

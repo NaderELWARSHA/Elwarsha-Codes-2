@@ -30,7 +30,7 @@
     if (!gate(page)) return;
     app.innerHTML = `<p class="mu">⏳ جارٍ الفحص…</p>`;
     let B = null; try { B = await base(); } catch (e) { B = null; }
-    const I = ign(), fd = DUP.faultDups(D.faults), cd = DUP.compDups(D.custom, B);
+    learn(); const I = ign(), fd = DUP.faultDups(D.faults), cd = DUP.compDups(D.custom, B);
     const keep = g => !I.has(pairKey(g.ids));
     const F = { exact: fd.exact.filter(keep), near: fd.near.filter(keep) }, C = { exact: cd.exact.filter(keep), near: cd.near.filter(keep), inBase: cd.inBase.filter(keep) };
     const tot = F.exact.length + F.near.length + C.exact.length + C.near.length + C.inBase.length;
@@ -47,11 +47,48 @@
      ${C.exact.length + C.near.length + C.inBase.length ? `<h2 class="h">🧊 الكباسات المضافة</h2>${sec("مكرر مؤكد", C.exact, "c")}${sec("شبيه", C.near, "c")}${sec("موجود أصلًا في القاعدة المرجعية", C.inBase, "c")}` : ""}
      ${B ? "" : '<div class="notice">تعذر تحميل القاعدة المرجعية: مقارنة الإضافات بالقاعدة اتسابت.</div>'}
      ${I.size ? `<p class="mu">${I.size} مجموعة متعلّمة «مش مكرر». <button class="secondary" type="button" id="dpclr">إظهارها تاني</button></p>` : ""}
-     <div class="row"><a class="secondary" href="#/import">📥 استيراد Excel / CSV</a><a class="secondary" href="#/admin">← الإدارة</a></div>`;
+     <div class="row"><a class="secondary" href="#/clean">🧹 شيل البيانات القديمة لما تستورد أحدث</a><a class="secondary" href="#/import">📥 استيراد Excel / CSV</a><a class="secondary" href="#/admin">← الإدارة</a></div>`;
     $$("[data-ign]").forEach(b => b.onclick = () => { const s = st().get(IGN, []) || []; s.push(pairKey(b.dataset.ign.split("|"))); st().set(IGN, s); X2.log("تكرار", "تعليم «مش مكرر»"); page(); });
     const cl = $("#dpclr"); if (cl) cl.onclick = () => { st().remove(IGN); page(); };
     $$("[data-delc]").forEach(b => b.onclick = () => { const c = D.custom.find(x => x.id == b.dataset.delc); if (!c || !confirm(`حذف «${c.rec.model}» من الإضافات؟ نسخته في القاعدة المرجعية هتفضل. (تقدر تتراجع من الإدارة)`)) return; snap(); if (commit(d => { d.custom = d.custom.filter(x => x.id != c.id); })) { CL && fixCompLinks(cIdx(c.id), -1); X2.log("حذف كباس مكرر مع القاعدة", c.rec.model); toast("اتحذف ✓"); page(); } });
   }
+  /* ================= تنظيف بيانات قديمة لما يتستورد مصدر أحدث (#/clean) ================= */
+  const learn = () => DUP.learnBrands([].concat((typeof LSt != "undefined" && LSt && LSt.brand) || [], (Y.SEED && Y.SEED.brand) || [], D.faults.map(r => r.brand)));
+  async function cleanPage(srcArg) {
+    if (!gate(() => cleanPage(srcArg))) return;
+    learn();
+    const SRC = DUP.sources(D.faults);
+    if (!SRC.length) { app.innerHTML = `<div class="empty"><div class="empty-ic">🧹</div><b>مفيش سجلات عليها «مصدر»</b><p class="mu">التنظيف بيشتغل لما تستورد ملف فيه خانة المصدر (زي ملفات الكتالوجات اللي بنجهزها). السجلات القديمة اللي من غير مصدر هتظهر هنا كـ«قديم» قدام المصدر الجديد.</p></div><div class="row"><a class="secondary" href="#/dups">← كاشف التكرار</a></div>`; return; }
+    const src = SRC.some(x => x.src == srcArg) ? srcArg : SRC[0].src, P = DUP.sourcePlan(D.faults, src);
+    const byId = new Map(D.faults.map(r => [r.id, r])), lbl = id => E(DUP.faultLabel(byId.get(id) || {}));
+    const rowR = x => `<li><label class="chk"><input type="checkbox" data-cl="${E(x.id)}" checked> <a href="#/fault/${E(x.id)}">${lbl(x.id)}</a></label><div class="mu">↳ النسخة الجديدة: ${x.to.slice(0, 3).map(id => `<a href="#/fault/${E(id)}">${lbl(id)}</a>`).join(" ، ")}${x.to.length > 3 ? ` +${x.to.length - 3}` : ""}</div></li>`;
+    const rowO = x => `<li><label class="chk"><input type="checkbox" data-cl="${E(x.id)}" data-orph="1" ${x.manual ? "" : "checked"}> <a href="#/fault/${E(x.id)}">${lbl(x.id)}</a>${x.manual ? ' <span class="chip st-info">إضافة يدوية</span>' : ""}</label></li>`;
+    app.innerHTML = `<p class="mu">لو استوردت بيانات <b>أحدث</b> من نفس المصدر، هنا بتشيل النسخ القديمة وتفضل الجديدة. المقارنة بالماركة (عربي أو إنجليزي: «تورنيدو» = «Tornado»)، والكود (E2 = «E2 (E21, E23)»، E01 = E1)، ونوع الجهاز والموديل.</p>
+     <div class="im-opts"><label>المصدر اللي هيفضل<select id="clsrc">${SRC.map(x => `<option value="${E(x.src)}" ${x.src == src ? "selected" : ""}>${E(x.src)} — ${x.n} سجل</option>`).join("")}</select></label></div>
+     <div class="chips"><span class="chip st-ok">✔ هيفضل: ${P.keep}</span><span class="chip st-warn">🔁 قديم ليه نسخة جديدة: ${P.replace.length}</span><span class="chip st-info">📦 قديم لنفس الماركات من غير مقابل: ${P.orphans.length}</span></div>
+     ${P.replace.length + P.orphans.length ? "" : '<div class="empty"><div class="empty-ic">✅</div><b>مفيش بيانات قديمة لنفس الماركات</b></div>'}
+     ${P.replace.length ? `<h3 class="h">🔁 قديم ليه نسخة جديدة (${P.replace.length})</h3><p class="mu">نفس الكود لنفس الماركة والجهاز في المصدر الجديد — متعلّمين للحذف. صورهم (لو فيه) بتتنقل للنسخة الجديدة، والمفضلة كمان.</p><details class="more" open><summary>عرض القائمة</summary><ol>${P.replace.map(rowR).join("")}</ol></details>` : ""}
+     ${P.orphans.length ? `<h3 class="h">📦 قديم من غير مقابل (${P.orphans.length})</h3><p class="mu">سجلات لنفس الماركات ونوع الجهاز مش لاقي لها نفس الكود في المصدر الجديد (ممكن مكتوبة بشكل مختلف، أو تيست مود بعنوان تاني). المستورد متعلّم، و<b>الإضافات اليدوية مش متعلّمة</b> — راجعهم بعينك.</p><div class="row"><button class="secondary" type="button" id="clall">حدد الكل</button><button class="secondary" type="button" id="clnone">شيل التحديد</button></div><details class="more"><summary>عرض القائمة</summary><ol>${P.orphans.map(rowO).join("")}</ol></details>` : ""}
+     ${P.replace.length + P.orphans.length ? `<div class="row"><button class="danger-btn" type="button" id="clgo">🗑️ احذف المتعلّم عليهم (<span id="cln">0</span>)</button><button class="secondary" type="button" id="clx">⬇️ القائمة Excel</button></div><p class="mu">قبل الحذف بتتاخد نسخة — تقدر تتراجع من «الإدارة ← تراجع عن آخر تغيير».</p>` : ""}
+     <div class="row"><a class="secondary" href="#/dups">← كاشف التكرار</a><a class="secondary" href="#/admin">← الإدارة</a></div>`;
+    const cnt = () => { const n = $$("[data-cl]:checked").length, c = $("#cln"); if (c) c.textContent = n; return n; }; cnt();
+    $$("[data-cl]").forEach(c => c.onchange = cnt);
+    $("#clsrc").onchange = ev => cleanPage(ev.target.value);
+    const sa = $("#clall"), sn = $("#clnone"); if (sa) sa.onclick = () => { $$("[data-orph]").forEach(c => c.checked = true); cnt(); }; if (sn) sn.onclick = () => { $$("[data-orph]").forEach(c => c.checked = false); cnt(); };
+    const xb = $("#clx"); if (xb) xb.onclick = () => dl("تنظيف-بيانات-قديمة.xlsx", XLSX.write([{ name: "التنظيف", widths: [26, 12, 16, 14, 26, 18, 40, 50], rows: [["الحالة", "الجهاز", "الماركة", "الفئة", "الموديل", "الكود/العنوان", "الوصف", "النسخة الجديدة"]].concat(P.replace.map(x => ["قديم ليه نسخة جديدة", x.id, x.to]).concat(P.orphans.map(x => ["قديم من غير مقابل", x.id, []])).map(([t, id, to]) => { const r = byId.get(id) || {}; return [t, r.deviceType || "", r.brand || "", r.category || "", r.model || "", r.code || r.title || "", r.title || "", to.map(i => DUP.faultLabel(byId.get(i) || {})).join(" | ")]; })) }]), XMIME);
+    const go = $("#clgo"); if (go) go.onclick = () => {
+      const del = new Set($$("[data-cl]:checked").map(c => c.dataset.cl)); if (!del.size) return toast("مفيش حاجة متعلّم عليها");
+      if (!confirm(`حذف ${del.size} سجل قديم؟ هيفضل ${P.keep} سجل من «${src}». (تقدر تتراجع من الإدارة)`)) return;
+      const to = new Map(P.replace.map(x => [x.id, x.to[0]])), imgs = new Map();
+      D.faults.forEach(r => { if (del.has(r.id) && to.has(r.id) && (r.imgs || []).length) { const k = to.get(r.id); imgs.set(k, [...new Set([...(imgs.get(k) || []), ...r.imgs])]); } });
+      if (snap() === false) return;
+      const ok = commit(d => { d.faults = d.faults.filter(r => !del.has(r.id)).map(r => imgs.has(r.id) ? { ...r, imgs: [...new Set([...(r.imgs || []), ...imgs.get(r.id)])] } : r); });
+      if (!ok) return;
+      ["mw_fav", "mw_rv"].forEach(k => { let L = S.get(k, []) || []; del.forEach(id => { L = to.has(id) ? DUP.remapLinks(L, "#/fault/" + id, "#/fault/" + to.get(id)) : L.filter(x => !x || x.h !== "#/fault/" + id); }); S.set(k, L); });
+      X2.log("تنظيف بيانات قديمة", `حذف ${del.size} — المصدر الباقي: ${src}`); toast(`اتحذف ${del.size} ✓`); cleanPage(src);
+    };
+  }
+
   /* بعد حذف إضافة كباس، روابط الكباسات بعدها في المفضلة/السجل بتتزحلق خطوة */
   function fixCompLinks(removed, keptIdx) {
     const fix = L => (L || []).map(x => { if (!x || !x.h) return x; const m = x.h.match(/^#\/comp\/(\d+)$/); if (!m) return x; const n = +m[1]; if (n == removed) return keptIdx >= 0 ? { ...x, h: "#/comp/" + keptIdx } : null; return n > removed ? { ...x, h: "#/comp/" + (n - 1) } : x; }).filter(Boolean);
@@ -162,7 +199,7 @@
 
   /* تصنيف كل صف: جديد / شبيه / يكمّل الناقص / مطابق / موجود في القاعدة / مكرر داخل الملف / مرفوض */
   async function classify() {
-    const { kind } = IMP, out = [], seen = new Map(), seenN = new Map();
+    learn(); const { kind } = IMP, out = [], seen = new Map(), seenN = new Map();
     if (kind == "comp") {
       let Bdb = {}; try { Bdb = await base(); } catch (e) { }
       const bk = new Map(), bnear = new Map(); Object.entries(Bdb).forEach(([b, rows]) => rows.forEach(r => { bk.set(DUP.brandKey(b) + "|" + DUP.normAr(r.model), b); bnear.set(DUP.brandKey(b) + "|" + DUP.nearKey(r.model), r.model); }));
@@ -202,12 +239,14 @@
     box.innerHTML = `<h3 class="h">③ المعاينة</h3>
      <div class="chips">${Object.keys(STL).filter(k => cnt(k)).map(k => `<span class="chip ${STL[k][1]}">${STL[k][0]}: ${cnt(k)}</span>`).join("")}</div>
      ${cnt("fill") ? `<label class="chk"><input type="checkbox" id="imfill" checked> كمّل الخانات الناقصة في ${cnt("fill")} سجل موجود (القيم الموجودة مش هتتغير)</label>` : ""}
+     ${cnt("near") ? `<div class="notice">⚠️ ${cnt("near")} سجل شبيه بموجود. لو الملف ده <b>نسخة أحدث</b> من بيانات عندك: علّمهم كلهم وضيفهم، وبعدين شيل القديم من «🧹 تنظيف بيانات قديمة».<div class="row"><button class="secondary" type="button" id="imnall">✔ علّم كل الشبيه</button></div></div>` : ""}
      <div class="im-tbl"><table class="vt"><thead><tr><th>صف</th><th>الحالة</th><th>السجل</th><th>ملاحظة</th><th></th></tr></thead><tbody>${L.slice(0, 300).map(line).join("")}</tbody></table>${L.length > 300 ? `<p class="mu">+${L.length - 300} صف تاني</p>` : ""}</div>
      <div class="row"><button class="primary" id="imok" type="button" ${cnt("new") + cnt("fill") + cnt("near") ? "" : "disabled"}>اعتماد: إضافة ${cnt("new")}${cnt("fill") ? " + تكميل " + cnt("fill") : ""}</button><button class="secondary" type="button" id="imx">⬇️ تقرير المعاينة Excel</button></div>`;
+    let allN = false; const na = $("#imnall"); if (na) na.onclick = () => { allN = true; $$("[data-nr]").forEach(c => c.checked = true); toast("اتعلّم " + cnt("near")); };
     $("#imx").onclick = () => dl("معاينة-الاستيراد.xlsx", XLSX.write([{ name: "المعاينة", widths: [6, 16, 22, 18, 60], rows: [["صف", "الحالة", isC ? "الموديل" : "الكود", isC ? "الماركة" : "الماركة/الجهاز", "ملاحظة"]].concat(L.map(x => [x.row, STL[x.st][0], x.rec ? (isC ? x.rec.model : x.rec.code || x.rec.title) : "", isC ? x.brand || "" : x.rec ? [x.rec.brand, x.rec.deviceType].filter(Boolean).join(" · ") : "", [x.why].concat(x.warn || []).filter(Boolean).join(" | ")])) }]), XMIME);
     $("#imok").onclick = ev => {
       if (!IMP || !IMP.recs) return;
-      const near = new Set($$("[data-nr]:checked").map(c => +c.dataset.nr)), fill = $("#imfill") ? $("#imfill").checked : false;
+      const near = new Set($$("[data-nr]:checked").map(c => +c.dataset.nr)); if (allN) L.slice(300).forEach(x => x.st == "near" && near.add(x.row)); const fill = $("#imfill") ? $("#imfill").checked : false;
       const add = L.filter(x => x.st == "new" || x.st == "near" && near.has(x.row)), upd = fill ? L.filter(x => x.st == "fill") : [];
       if (!add.length && !upd.length) return toast("مفيش حاجة تتضاف");
       ev.target.disabled = true; snap(); const now = new Date().toISOString();
@@ -217,7 +256,7 @@
       });
       if (!ok) { ev.target.disabled = false; return; }
       X2.log("استيراد " + (isC ? "كباسات" : "أعطال") + " (Excel/CSV)", `إضافة ${add.length}، تكميل ${upd.length}`);
-      $("#imf").value = ""; $("#imstep").innerHTML = `<div class="notice">✅ اتضاف ${add.length}${upd.length ? " واتكمّل " + upd.length : ""}. تقدر تتراجع من «الإدارة ← تراجع عن آخر تغيير».</div><div class="row"><a class="primary" href="${isC ? "#/comps" : "#/faults"}">افتح ${isC ? "الكباسات" : "الأعطال"}</a><a class="secondary" href="#/dups">🔍 افحص التكرار</a></div><p class="mu">عايز تستورد ملف تاني؟ اختاره من فوق.</p>`;
+      $("#imf").value = ""; $("#imstep").innerHTML = `<div class="notice">✅ اتضاف ${add.length}${upd.length ? " واتكمّل " + upd.length : ""}. تقدر تتراجع من «الإدارة ← تراجع عن آخر تغيير».</div><div class="row"><a class="primary" href="${isC ? "#/comps" : "#/faults"}">افتح ${isC ? "الكباسات" : "الأعطال"}</a><a class="secondary" href="#/dups">🔍 افحص التكرار</a>${isC ? "" : '<a class="secondary" href="#/clean">🧹 شيل القديم وخلّي الجديد</a>'}</div><p class="mu">عايز تستورد ملف تاني؟ اختاره من فوق.</p>`;
       IMP = { kind: IMP.kind };
     };
   }
@@ -255,11 +294,11 @@
 
   /* ================= قسم الإدارة ================= */
   function adminBlock() {
-    const n = (() => { const I = ign(), d = DUP.faultDups(D.faults); return d.exact.concat(d.near).filter(g => !I.has(pairKey(g.ids))).length + DUP.compDups(D.custom, null).exact.length; })();
-    return `<h2>🔍 التكرار والاستيراد من Excel</h2><div class="row"><a class="primary" href="#/dups" id="admdup">🔍 كاشف التكرار والدمج${n ? ` <span class="chip st-warn">${n}</span>` : ""}</a><a class="primary" href="#/import">📥 استيراد Excel / CSV</a></div>
+    learn(); const n = (() => { const I = ign(), d = DUP.faultDups(D.faults); return d.exact.concat(d.near).filter(g => !I.has(pairKey(g.ids))).length + DUP.compDups(D.custom, null).exact.length; })();
+    return `<h2>🔍 التكرار والاستيراد من Excel</h2><div class="row"><a class="primary" href="#/dups" id="admdup">🔍 كاشف التكرار والدمج${n ? ` <span class="chip st-warn">${n}</span>` : ""}</a><a class="primary" href="#/import">📥 استيراد Excel / CSV</a><a class="secondary" href="#/clean">🧹 تنظيف بيانات قديمة</a></div>
      <div class="row"><button class="secondary" id="xfx" type="button">⬇️ الأعطال Excel</button><button class="secondary" id="xcx" type="button">⬇️ الكباسات المضافة Excel</button><button class="secondary" id="xtc" type="button">⬇️ قالب كباسات</button><button class="secondary" id="xtf" type="button">⬇️ قالب أعطال</button></div>`;
   }
   function wireAdmin() { const b = (id, f) => { const x = $(id); if (x) x.onclick = f; }; b("#xfx", exportFaults); b("#xcx", exportComps); b("#xtc", () => template("comp")); b("#xtf", () => template("fault")); }
 
-  g.DUPUI = { page, merge, importPage, formWatch, adminBlock, wireAdmin, exportFaults, exportComps, template, fixCompLinks };
+  g.DUPUI = { page, cleanPage, merge, importPage, formWatch, adminBlock, wireAdmin, exportFaults, exportComps, template, fixCompLinks };
 })(window);
